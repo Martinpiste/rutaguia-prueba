@@ -132,7 +132,7 @@ const init=()=>({tab:'inicio',p:null,d:{},r:null,team:false,acts:{},res:{},peopl
 try{if(!localStorage.getItem('p30_preupdate')){const _r=localStorage.getItem('p30');if(_r&&_r.length>2)localStorage.setItem('p30_preupdate',JSON.stringify({at:Date.now(),label:'Datos originales al abrir esta versión por primera vez',raw:_r}))}}catch(e){}
 let S;try{S=JSON.parse(localStorage.getItem('p30'))||init()}catch(e){S=init()}
 S.inc=S.inc||{act:{},biz:{},hist:[],last:{}};S.ins=S.ins||[];
-const save=()=>{if(window.__noSave)return;try{localStorage.setItem('p30',JSON.stringify(S))}catch(e){}try{window.CS&&CS.touch()}catch(e){}};
+const save=()=>{if(window.__noSave)return;try{window.CY&&CY.sync()}catch(e){}try{localStorage.setItem('p30',JSON.stringify(S))}catch(e){}try{window.CS&&CS.touch()}catch(e){}};
 const mixto=()=>[...C.routes.venta.steps.map(s=>({...s,area:'Ventas'})),...C.routes[S.team?'l4x30':'c4x30'].steps.map(s=>({...s,area:'Equipo'}))];
 const steps=()=>S.r=='mixto'?mixto():C.routes[S.r].steps;
 const rname=()=>S.r=='mixto'?'MIXTO 30 · Ventas + '+(S.team?'Liderazgo':'Construcción'):C.routes[S.r].name;
@@ -145,7 +145,7 @@ const copy=t=>copyT(t).then(ok=>toast(ok?'Copiado. Pégalo en WhatsApp.':'No se 
 const today=()=>new Date().toISOString().slice(0,10);
 function assign(){const g=S.d.goal;S.team=S.d.team=='Sí';
 S.r=g==0?'venta':g==1?'c4x30':g==2?(S.team?'l4x30':'c4x30'):g==3||g==4?'mixto':'bienestar';
-if(g==3)S.team=false;if(g==4)S.team=true;S.stage='reporte';save()}
+if(g==3)S.team=false;if(g==4)S.team=true;S.stage='reporte';try{window.CY&&CY.onAssign()}catch(e){}save()}
 function render(){if(window.CS&&CS.gate())return;const A=$('#app'),N=$('#nav');N.style.display='none';
 if(window.__bkv&&S.v&&['perfil','diag','reporte'].includes(S.stage))return A.innerHTML=S.v();
 if(S.stage=='perfil')return A.innerHTML=perfil();
@@ -167,7 +167,7 @@ return`<div class="c"><div class="m">TU RUTA</div><b>${E(rname())}</b><div style
 <div class="c"><b>Personas en seguimiento:</b> ${S.people.filter(x=>x.estado=='Seguimiento').length}<br><b>Seguimientos para hoy o atrasados:</b> ${seg.length}${seg.slice(0,3).map(x=>`<div class="m">• ${E(x.nombre)}: ${E(x.sig||'dar seguimiento')}</div>`).join('')}<br><b>Próxima revisión 1 a 1:</b> ${E((S.rev.filter(r=>r.prox).map(r=>r.prox).sort()[0])||'sin fecha')}</div>
 ${incBanner()}<button class="b s" data-a="obj">Tengo una objeción</button><button class="b s" data-a="apoyo">Necesito apoyo</button>`}
 function rutaV(){const a=steps(),c=cur();if(S.open!=null&&S.open<a.length)return paso(S.open);
-return`<h1>Mi ruta</h1><div class="c"><b>${E(rname())}</b>${bar(pct())}</div>${a.map((s,i)=>`<div class="c st" style="${i==c?'border-color:var(--ac)':''}"><span>${done(i)?'✓':i==c?'●':'○'}</span><div style="flex:1"><b>${E(s.t)}</b>${s.area?` <span class="tag">${s.area}</span>`:''}<br><span class="m">${stLabel(i,c)}</span></div><button class="b sm s" data-a="abrir" data-v="${i}">${done(i)?'Ver':'Abrir'}</button></div>`).join('')}${c>=a.length?resumen():''}`}
+return`<h1>Mi ruta</h1><div class="c"><b>${E(rname())}</b>${window.CY?CY.chip():''}${bar(pct())}</div>${window.CY?CY.bar():''}${a.map((s,i)=>`<div class="c st" style="${i==c?'border-color:var(--ac)':''}"><span>${done(i)?'✓':i==c?'●':'○'}</span><div style="flex:1"><b>${E(s.t)}</b>${s.area?` <span class="tag">${s.area}</span>`:''}<br><span class="m">${stLabel(i,c)}</span></div><button class="b sm s" data-a="abrir" data-v="${i}">${done(i)?'Ver':'Abrir'}</button></div>`).join('')}${c>=a.length?resumen():''}`}
 function resumen(){const r={venta:'Conversar → descubrir → recomendar → resolver dudas → decisión → seguimiento → cliente',c4x30:'Lista → conversación → invitación → presentación → seguimiento → inicio → acompañamiento → duplicación',l4x30:'Mapear → diagnosticar → acordar → acompañar → delegar → revisar → reconocer → formar líder',mixto:'Ventas + equipo: el trabajo continúa en cada ciclo',bienestar:'Objetivo → hábitos → consumo → seguimiento'};
 return`<div class="c"><h3>Ciclo aprendido</h3>${r[S.r]}<button class="b g" data-a="repetir">Repetir ciclo</button></div>`}
 function paso(i){const a=steps(),s=a[i],k=key(i),ac=S.acts[k]||{},d=done(i),n=a.length;
@@ -760,7 +760,7 @@ else if(kd=='objec')h+=Lb('OBJECIÓN O DUDA',C.obj.map(o=>ch(id,'ob',o[0],d.ob))
 else if(kd=='decis')h+=Lb('¿QUÉ DECIDIÓ?',DEC.map(o=>ch(id,'dec',o,d.dec)).join(''),'dec')+Lb('¿HUBO VENTA?',VEN.map(o=>ch(id,'venta',o,d.venta)).join(''),'venta')+nxt(p,d)+fe(id,'na');
 else if(kd=='posv')h+=Lb('¿CÓMO VA?',PVE.map(o=>ch(id,'estado',o,d.estado)).join(''),'estado')+(d.estado=='Tuvo una molestia'?'<div class="m" style="color:var(--ort)">No diagnostiques. Si fue fuerte, continúa o empeora, recomienda suspender y consultar a un profesional de salud.</div>':'')+Lb('¿RECOMENDÓ A ALGUIEN?',['Sí','No'].map(o=>ch(id,'rec',o,d.rec)).join(''),'rec')+(d.rec=='Sí'?Lb('¿A QUIÉN? (se agrega a Personas)',gi(id,'recn',d.recn,'Nombre'),'recn'):'')+nxt(p,d)+fe(id,'na');
 return h+'</div>'}
-function prepB(kd,g){const k=key(S.open),cn=(S.cycles||[]).length;g.ppl.forEach(pid=>{const d=g.d[pid]||(g.d[pid]={}),p=P2(pid);if(!p)return;
+function prepB(kd,g){const k=key(S.open),cn=window.CY?CY.cn():(S.cycles||[]).length;g.ppl.forEach(pid=>{const d=g.d[pid]||(g.d[pid]={}),p=P2(pid);if(!p)return;
 if(kd=='decis')d.res=d.venta=='Venta realizada'?'Hizo una compra':d.dec=='Quiere pensarlo'?'Quiere pensarlo':d.dec=='Pide más información'?'Pidió más información':d.dec=='No por ahora'?'No le interesa por ahora':d.dec=='Decidió comprar'?'Quiere probar producto':'Conversamos';
 if(kd=='posv'&&d.rec=='Sí'&&(d.recn||'').trim()&&!S.people.some(x=>nm(x.nombre)==nm(d.recn)))S.people.push({id:uid(),nombre:d.recn.trim(),tipo:'Prospecto',interes:'Ambos',estado:'Por contactar',rel:'Recomendado por '+p.nombre,obj:'Ventas',act:'Activo',createdAt:today()});
 if(!Object.keys(errB(kd,d,pid,false)).length)upsert(S.ld.log,'lg_'+k+'_'+pid+'_c'+cn,{pid,paso:steps()[S.open].t,txt:sumB(kd,d),fecha:today()})})}
@@ -809,7 +809,7 @@ Object.assign(C.routes.l4x30.steps[0],{how:'1) Verás a tus integrantes registra
    configuración de Firebase ni estado de pantalla. Restaurar = reemplazar, siempre con vista previa,
    confirmación y copia previa de lo que había (se puede deshacer). */
 const BK=(()=>{
-const APP='tu-guia-de-accion',FMT=1,BUILD='etapaB+respaldo-2',LB='p30_lastbk',MAXB=8e6;
+const APP='tu-guia-de-accion',FMT=2,BUILD='etapaB+planes-1',LB='p30_lastbk',MAXB=8e6;
 const TRANS=['tmp','v','tab','open'],DEV=['fbUid'];
 const BADK=/^(__proto__|constructor|prototype)$/,SECK=/^(pass(word)?|passwd|secret|token|api[_-]?key|credentials?|private[_-]?key|id[_-]?token|access[_-]?token|refresh[_-]?token)$/i,SECV=/AIza[0-9A-Za-z_\-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 let pend=null,sec='exp',busy=false;
@@ -821,12 +821,12 @@ const slug=n=>String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A
 const fdt=t=>{try{return new Date(t).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return String(t||'')}};
 const sOf=st=>{try{return st.r=='mixto'?[...C.routes.venta.steps,...C.routes[st.team?'l4x30':'c4x30'].steps]:((C.routes[st.r]||{}).steps||[])}catch(e){return[]}};
 function counts(st){const a=sOf(st),ld=isO(st.ld)?st.ld:{},tm=(st.L&&isO(st.L.team))?st.L.team:{};let ldn=0;Object.keys(ld).forEach(k=>{ldn+=L(ld[k])});
-return{nombre:(st.p&&st.p.n)||'',ruta:!st.r?'':st.r=='mixto'?'Mixto 30':((C.routes[st.r]||{}).name||String(st.r)),pasos:a.filter((_,k)=>st.res&&st.res[st.r+k]).length,total:a.length,personas:L(st.people),inscritos:L(st.ins),incentivos:TT(st.inc&&st.inc.act),juntas:TT(st.jt&&st.jt.att),rev:L(st.rev),lider:ldn,miembros:K(tm),reportes:Object.values(tm).reduce((n,m)=>n+L(m&&m.reports),0),ciclos:L(st.cycles)}}
+return{nombre:(st.p&&st.p.n)||'',ruta:!st.r?'':st.r=='mixto'?'Mixto 30':((C.routes[st.r]||{}).name||String(st.r)),pasos:a.filter((_,k)=>st.res&&st.res[st.r+k]).length,total:a.length,personas:L(st.people),inscritos:L(st.ins),incentivos:TT(st.inc&&st.inc.act),juntas:TT(st.jt&&st.jt.att),rev:L(st.rev),lider:ldn,miembros:K(tm),reportes:Object.values(tm).reduce((n,m)=>n+L(m&&m.reports),0),ciclos:L(st.cycles),planes:(typeof CY!='undefined'?CY.nPlans(st):0)}}
 /* ----- registros por sección (misma partición que usa la sincronización con la nube) ----- */
 const SECS=()=>{try{return CS.SEC||{}}catch(e){return{}}};
-const SL={profile:'Perfil',plan:'Ruta y equipo',activities:'Actividades y avance',people:'Personas e inscritos',meetings:'Juntas y revisiones',incentives:'Incentivos',progress:'Eventos y ciclos',settings:'Ajustes',team:'Liderazgo y equipo'};
+const SL={profile:'Perfil',plan:'Ruta y equipo',activities:'Actividades y avance',people:'Personas e inscritos',meetings:'Juntas y revisiones',incentives:'Incentivos',progress:'Eventos y ciclos',plans:'Planes y ciclos (historial de planes)',settings:'Ajustes',team:'Liderazgo y equipo'};
 const emp=v=>v===undefined||v===null||v===''||(Array.isArray(v)&&!v.length)||(isO(v)&&!Object.keys(v).length);
-const rc=v=>{if(emp(v))return 0;if(Array.isArray(v))return v.length;if(isO(v)){let n=0;for(const k of Object.keys(v)){const x=v[k];n+=Array.isArray(x)?x.length:emp(x)?0:1}return n}return 1};
+const rc=v=>{if(isO(v)&&Array.isArray(v.items)&&'active' in v)return v.items.length;if(emp(v))return 0;if(Array.isArray(v))return v.length;if(isO(v)){let n=0;for(const k of Object.keys(v)){const x=v[k];n+=Array.isArray(x)?x.length:emp(x)?0:1}return n}return 1};
 const skeys=k=>(SECS()[k]||[]).filter(f=>!DEV.includes(f)&&!TRANS.includes(f));
 const secN=(st,k)=>skeys(k).reduce((n,f)=>n+rc(st&&st[f]),0);
 const secSum=st=>{const o={};Object.keys(SECS()).forEach(k=>{o[k]=secN(st,k)});return o};
@@ -862,12 +862,22 @@ function remapIds(cur,bak){const m={},ix=mkIndex('people',Array.isArray(cur.peop
 if(!n)return bak;
 const go=x=>{if(typeof x=='string')return h.call(m,x)?m[x]:x;if(Array.isArray(x))return x.map(go);if(isO(x)){const o={};for(const k of Object.keys(x)){if(BADK.test(k))continue;o[h.call(m,k)?m[k]:k]=go(x[k])}return o}return x};
 return go(bak)}
-function mergeStates(cur,bak){const ctx={st:{},names:[],skip:[],dif:[]},A_=cl(cur);let B_=cl(bak);if(isO(B_))B_=remapIds(A_,B_);TRANS.concat(DEV).forEach(k=>{delete B_[k]});const out={};
+/* ciclos de plan: se unen por id; el ciclo que ya tienes manda y solo se completan sus vacíos; nunca se mezclan datos entre ciclos */
+function mergeCy(a,b,ctx){const out=cl(a),st=stOf(ctx,'cy');
+for(const bi of (b&&b.items)||[]){if(!isO(bi)||!bi.id)continue;const f=out.items.find(x=>x.id===bi.id);
+ if(!f){const c=cl(bi);if(c.status=='activo')c.status='pausado';out.items.push(c);st.add++}
+ else{if(f.data||bi.data)f.data=mVal(f.data||{},bi.data||{},'cy.data','cy',ctx);['plan','ruta','start','last','goal','n'].forEach(k=>{if(emp(f[k])&&!emp(bi[k]))f[k]=bi[k]})}}
+if(!out.active&&b&&b.active)out.active=b.active;out.v=out.v||1;out.verified=true;return out}
+function mergeStates(cur,bak){const fb=CY.orphan(cur)||CY.orphan(bak),ctx={st:{},names:[],skip:[],dif:[]},A_=fb?cl(cur):CY.canonState(cur);let B_=cl(bak);if(isO(B_)&&!fb)B_=CY.canonState(B_);if(isO(B_))B_=remapIds(A_,B_);TRANS.concat(DEV).forEach(k=>{delete B_[k]});const lv=[...new Set([...(A_.__live||[]),...(B_.__live||[])])];delete A_.__live;delete B_.__live;const out={};
 Object.keys(A_).forEach(k=>{out[k]=A_[k]});
 for(const k of Object.keys(B_)){if(BADK.test(k))continue;stOf(ctx,k);
+ if(k==='cy'&&!fb){out.cy=mergeCy(A_.cy,B_.cy,ctx);continue}
  if(!(k in A_)||A_[k]===undefined||A_[k]===null){if(!emp(B_[k])){out[k]=B_[k];ctx.st[k].add++}}
  else out[k]=mVal(A_[k],B_[k],k,k,ctx)}
+if(!fb){out.__live=lv;CY.materialize(out)}
 return{state:out,st:ctx.st,names:ctx.names,skip:ctx.skip}}
+function coversAll(a,b){if(CY.orphan(a)||CY.orphan(b))return covers(a,b);const A_=CY.canonState(a),B_=CY.canonState(b),ca=A_.cy,cb=B_.cy;delete A_.cy;delete B_.cy;delete A_.__live;delete B_.__live;if(!covers(A_,B_))return false;
+return ca.items.every(x=>{const y=cb.items.find(z=>z.id===x.id);return !!y&&covers(x.data||{},y.data||{})})}
 /* comprobación de seguridad: todo lo que había sigue ahí, idéntico (solo se permite rellenar vacíos) */
 function covers(a,b){if(Array.isArray(a)){if(!Array.isArray(b))return false;const s=new Set(b.map(canon));return a.every(x=>s.has(canon(x)))}
 if(isO(a)){if(!isO(b))return false;return Object.keys(a).every(k=>(k in b)?covers(a[k],b[k]):emp(a[k]))}
@@ -882,6 +892,7 @@ function scrub(x,c){if(Array.isArray(x))return x.map(v=>scrub(v,c));if(isO(x)){c
 function check(st){const er=[],wr=[];if(!isO(st))return{er:['El contenido del respaldo no tiene el formato esperado.'],wr};
 ['people','rev','ev','cycles','ins','fbIn'].forEach(k=>{if(st[k]!==undefined&&!Array.isArray(st[k]))er.push('El campo «'+k+'» no tiene el formato esperado.')});
 ['p','d','acts','res','g','sup','inc','jt','L','ld'].forEach(k=>{if(st[k]!==undefined&&st[k]!==null&&!isO(st[k]))er.push('El campo «'+k+'» no tiene el formato esperado.')});
+if(st.cy!==undefined&&st.cy!==null){if(!isO(st.cy)||!Array.isArray(st.cy.items))er.push('El historial de planes no tiene el formato esperado.');else if(st.cy.items.some(x=>!isO(x)||typeof x.id!='string'||!x.id||(x.data!==undefined&&!isO(x.data))))er.push('Hay planes con datos incompletos.')}
 if(Array.isArray(st.people)&&st.people.some(x=>!isO(x)||typeof x.nombre!='string'))er.push('Hay personas con datos incompletos.');
 if(Array.isArray(st.ins)&&st.ins.some(x=>!isO(x)))er.push('Hay inscritos con datos incompletos.');
 if(st.uid!==undefined&&!/^usr_[0-9a-f]{6,}$/i.test(String(st.uid)))wr.push('La identidad de miembro tiene un formato distinto al habitual.');
@@ -914,15 +925,15 @@ if(c.secret)wr.push('Se omitieron '+c.secret+' valores que parecían credenciale
 const v=check(state);if(v.er.length)return E2(v.er[0]);
 return{b,state,legacy,wr:wr.concat(v.wr),theme:(isO(b.data)&&['light','dark'].includes(b.data.theme))?b.data.theme:null,src:'archivo'}}
 function build(src,ver){const c={secret:0,proto:0},state=scrub(src||snap(),c),data={state,theme:(()=>{try{return curTheme()}catch(e){return'light'}})()},dj=JSON.stringify(data),now=new Date();
-const out={app:APP,backupType:'fullBackup',backupVersion:FMT,build:BUILD,exportedAt:now.toISOString(),origin:(typeof location!='undefined'&&location.origin)||'',member:{userId:state.uid||'',name:(state.p&&state.p.n)||''},summary:Object.assign(counts(state),{secciones:secSum(state)}),verification:ver||{status:'unverified',nota:'Generado sin comparar con la nube'},excluded:{estadoDePantalla:TRANS,propiosDelDispositivo:DEV,credenciales:'nunca se incluyen',valoresOmitidos:c.secret+c.proto},checksum:{algo:'cyrb53',value:cy(dj)},data};
+const out={app:APP,backupType:'fullBackup',backupVersion:FMT,build:BUILD,exportedAt:now.toISOString(),origin:(typeof location!='undefined'&&location.origin)||'',member:{userId:state.uid||'',name:(state.p&&state.p.n)||''},summary:Object.assign(counts(state),{secciones:secSum(state),planesDetalle:CY.canonState(state).cy.items.map(x=>({id:x.id,plan:x.plan,ruta:x.ruta,ciclo:x.n,estado:x.status,avance:x.pct,completadas:x.done,total:x.total,inicio:x.start,ultimaActividad:x.last}))}),verification:ver||{status:'unverified',nota:'Generado sin comparar con la nube'},excluded:{estadoDePantalla:TRANS,propiosDelDispositivo:DEV,credenciales:'nunca se incluyen',valoresOmitidos:c.secret+c.proto},checksum:{algo:'cyrb53',value:cy(dj)},data};
 const txt=JSON.stringify(out,null,1);return{out,txt,bytes:txt.length,fn:'respaldo_guia-de-accion_'+slug(out.member.name)+'_'+stamp(now)+(ver&&ver.status=='incomplete'?'_INCOMPLETO':ver&&ver.status=='unverified'?'_SIN-VERIFICAR':'')+'.json'}}
 const mark=x=>{try{localStorage.setItem(LB,JSON.stringify({at:Date.now(),fn:x.fn,bytes:x.bytes,personas:x.out.summary.personas,pasos:x.out.summary.pasos,total:x.out.summary.total,status:(x.out.verification||{}).status}))}catch(e){}},last=()=>{try{return JSON.parse(localStorage.getItem(LB))}catch(e){return null}};
 /* copia de lo que hay ahora, comprobada al releerla */
 function keep(key,label){try{const raw=localStorage.getItem('p30');if(!raw)return true;if(key=='p30_prerestore'){const old=localStorage.getItem(key);if(old)localStorage.setItem('p30_prerestore_2',old)}const v=JSON.stringify({at:Date.now(),label,raw});localStorage.setItem(key,v);return localStorage.getItem(key)===v}catch(e){return false}}
-const CK=/^p30_(preupdate|prerestore|prerestore_2|prereset|backup_\d+)$/;
+const CK=/^p30_(preupdate|precycles|prerestore|prerestore_2|prereset|backup_\d+)$/;
 function copies(){const o=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(!CK.test(k))continue;let at=0,raw='',lab='';const v=localStorage.getItem(k);
  if(/^p30_backup_/.test(k)){raw=v;at=+k.split('_')[2]||0;lab='Copia automática de sincronización'}
- else{let j;try{j=JSON.parse(v)}catch(e){continue}raw=j&&j.raw;at=+j.at||Date.parse(j.at)||0;lab=k=='p30_preupdate'?'Datos originales al abrir esta versión por primera vez':k=='p30_prereset'?'Antes de «Reiniciar todo»':'Antes de restaurar un respaldo'}
+ else{let j;try{j=JSON.parse(v)}catch(e){continue}raw=j&&j.raw;at=+j.at||Date.parse(j.at)||0;lab=k=='p30_preupdate'?'Datos originales al abrir esta versión por primera vez':k=='p30_precycles'?'Antes de activar los ciclos de plan':k=='p30_prereset'?'Antes de «Reiniciar todo»':'Antes de restaurar un respaldo'}
  let st;try{st=JSON.parse(raw)}catch(e){continue}if(!isO(st))continue;o.push({k,at,lab,c:counts(st)})}}catch(e){}return o.sort((a,b)=>b.at-a.at)}
 function loadCopy(k){if(!CK.test(k))return E2('No encontré esa copia.');let v,raw;try{v=localStorage.getItem(k)}catch(e){}
 if(!v)return E2('No encontré esa copia.');try{raw=/^p30_backup_/.test(k)?v:JSON.parse(v).raw;const st=JSON.parse(raw);if(!isO(st))throw 0;const c={secret:0,proto:0},s2=scrub(st,c),ch=check(s2);if(ch.er.length)return E2(ch.er[0]);return{mode:'replace',b:{backupVersion:0,exportedAt:'',member:{}},state:s2,legacy:true,wr:['Es una copia guardada automáticamente en este teléfono.'].concat(ch.wr),theme:null,src:'copia',key:k}}catch(e){return E2('No pude leer esa copia.')}}
@@ -974,7 +985,7 @@ async function applyMerge(p){
 try{await CS.pause(true)}catch(e){}
 const q=await plan(p);if(q.block)return{ok:false,msg:q.block};
 if(q.mode!=='merge')return q.mode=='full'?apply(q):{ok:false,msg:'No pude determinar cómo combinar. No cambié nada.'};
-if(!covers(q.base,q.merged))return{ok:false,msg:'La comprobación de seguridad detectó que se perdería información, así que no cambié nada.'};
+if(!coversAll(q.base,q.merged))return{ok:false,msg:'La comprobación de seguridad detectó que se perdería información, así que no cambié nada.'};
 if(!keep('p30_prerestore','Antes de restaurar un respaldo'))return{ok:false,msg:'No pude guardar una copia de tus datos actuales, así que no cambié nada. Exporta un respaldo primero o libera espacio.'};
 const st=cl(q.merged);TRANS.concat(DEV).forEach(k=>{delete st[k]});if(S&&S.fbUid)st.fbUid=S.fbUid;st.tab='inicio';
 let prev=null;try{prev=localStorage.getItem('p30')}catch(e){}
@@ -992,7 +1003,7 @@ const head=ok?`<div class="c"><div class="row" style="justify-content:flex-start
 :`<div class="c" style="border-color:var(--er);background:var(--erbg)"><div class="row" style="justify-content:flex-start;gap:6px;color:var(--ert)">${ic('alert')}<b>${x.status=='unverified'?'No se pudo comparar con la nube':'Respaldo INCOMPLETO'}</b></div>${x.warns.map(w=>`<div class="m" style="margin-top:6px;color:var(--ert)">${E(w)}</div>`).join('')}<div class="m" style="margin-top:6px;color:var(--ert)"><b>No lo tomes como un respaldo exitoso.</b> Reintenta con buena conexión.</div></div>`;
 const notes=ok?x.warns.map(w=>`<div class="c" style="border-color:var(--or)"><div class="m" style="color:var(--ort)">⚠ ${E(w)}</div></div>`).join(''):'';
 const rows=x.rows.length?x.rows.map(r=>`<div class="c"><div class="row"><b>${E(SL[r.k]||r.k)}</b><span class="tag">${r.nb} ${r.nb==1?'registro':'registros'}</span></div><div class="m">Teléfono: ${r.nl} · Nube: ${r.nc==null?'—':r.nc} · Archivo: ${r.nb}</div><div class="m" style="${r.ok?'':'color:var(--ert)'}">${r.ok?'✓ ':'✗ '}${E(r.es)}</div></div>`).join(''):'';
-const sum=x.txt?`<div class="c"><div class="m"><b>El archivo trae:</b> ${c.personas} personas · ${c.pasos} de ${c.total} actividades${c.incentivos?' · '+c.incentivos+' incentivos activos':''}${c.rev?' · '+c.rev+' revisiones 1 a 1':''}${c.juntas?' · '+c.juntas+' asistencias a juntas':''}${c.miembros?' · '+c.miembros+' miembros de tu equipo':''}.</div><div class="m" style="margin-top:6px">No incluye contraseñas, tu cuenta de Google ni la configuración de Firebase. No es el reporte que mandas a tu líder.</div>${lb?`<div class="m" style="margin-top:6px">Último archivo generado en este teléfono: ${E(fdt(lb.at))}. Este teléfono no puede confirmar que lo guardaste: revisa que aparezca en Archivos.</div>`:''}</div>`:'';
+const sum=x.txt?`<div class="c"><div class="m"><b>El archivo trae:</b> ${c.planes} ${c.planes==1?'plan':'planes (ciclos)'} · ${c.personas} personas · ${c.pasos} de ${c.total} actividades del plan activo${c.incentivos?' · '+c.incentivos+' incentivos activos':''}${c.rev?' · '+c.rev+' revisiones 1 a 1':''}${c.juntas?' · '+c.juntas+' asistencias a juntas':''}${c.miembros?' · '+c.miembros+' miembros de tu equipo':''}.</div><div class="m" style="margin-top:6px">No incluye contraseñas, tu cuenta de Google ni la configuración de Firebase. No es el reporte que mandas a tu líder.</div>${lb?`<div class="m" style="margin-top:6px">Último archivo generado en este teléfono: ${E(fdt(lb.at))}. Este teléfono no puede confirmar que lo guardaste: revisa que aparezca en Archivos.</div>`:''}</div>`:'';
 const btn=!x.txt?'<button class="b" data-a="bkexp">Reintentar</button>':ok?`<button class="b" data-a="bkshare">Guardar o compartir archivo</button><div class="m" style="margin:-2px 2px 6px">En iPhone elige «Guardar en Archivos».</div><button class="b s" data-a="bkdl">Descargar archivo</button><button class="b t" data-a="bkcopy">Copiar respaldo como texto</button>`
 :`<button class="b" data-a="bkexp">Reintentar verificación</button><button class="b s" data-a="bkshare">Guardar copia parcial de todos modos</button><button class="b t" data-a="bkdl">Descargar copia parcial</button>`;
 return bk+head+notes+sum+(rows?`<details ${ok?'':'open'}><summary>Detalle por sección</summary>${rows}</details>`:'')+btn}
@@ -1012,7 +1023,7 @@ ${cp.map(x=>`<div class="c"><div class="row" style="align-items:flex-start"><div
 function head(p){const b=counts(p.state),m=p.b||{};return`<div class="c"><div class="row"><b>${E(b.nombre||'Sin nombre')}</b><span class="tag">${E(b.ruta||'Sin ruta')}</span></div><div class="m">${p.src=='copia'?'Copia guardada en este teléfono':m.exportedAt?'Respaldo generado el '+E(fdt(m.exportedAt)):'Archivo sin fecha'}</div>
 <div class="li" style="gap:6px;margin-top:6px"><span class="ok">${ic('check','sm')}</span>Formato y estructura válidos</div>${p.src=='archivo'&&!p.legacy&&p.b.checksum?`<div class="li" style="gap:6px"><span class="ok">${ic('check','sm')}</span>Integridad verificada</div>`:''}${p.cloud=='ok'?`<div class="li" style="gap:6px"><span class="ok">${ic('check','sm')}</span>Comparado con lo que hay en tu nube</div>`:''}</div>`}
 function mergeV(p){const b=counts(p.state),c=counts(p.base),m=counts(p.merged),w=p.wr.slice();
-const keys=[['Actividades de la ruta','pasos'],['Personas','personas'],['Inscritos (incentivos)','inscritos'],['Incentivos activos','incentivos'],['Asistencias a juntas','juntas'],['Revisiones 1 a 1','rev'],['Registros de liderazgo','lider'],['Miembros de tu equipo','miembros'],['Reportes recibidos','reportes'],['Ciclos completados','ciclos']];
+const keys=[['Actividades del plan activo','pasos'],['Planes y ciclos','planes'],['Personas','personas'],['Inscritos (incentivos)','inscritos'],['Incentivos activos','incentivos'],['Asistencias a juntas','juntas'],['Revisiones 1 a 1','rev'],['Registros de liderazgo','lider'],['Miembros de tu equipo','miembros'],['Reportes recibidos','reportes'],['Ciclos completados','ciclos']];
 const rows=keys.map(([l,k],i)=>[l,b[k],c[k],m[k]-c[k],i]).filter(r=>r[4]<3||r[1]||r[2]||r[3]);const vis=rows.reduce((n,r)=>n+Math.max(0,r[3]),0),otros=Math.max(0,p.total-vis);
 if(p.state.uid&&p.base.uid&&p.state.uid!==p.base.uid)w.push('Este respaldo es de otra identidad de miembro. Se conserva la tuya; los registros se agregan a tus datos.');
 w.push(p.cloud=='ok'?'Lo que se agregue se enviará también a tu nube con la sincronización normal. Solo se agregan registros: no se borra ni se reemplaza nada allí.':'No hay sesión de nube activa: se combinará solo en este teléfono.');
@@ -1030,7 +1041,7 @@ function replaceV(p){const b=counts(p.state),c=counts(S),w=p.wr.slice(),full=p.m
 const less=[];if(b.personas<c.personas)less.push('personas ('+b.personas+' en la copia, '+c.personas+' ahora)');if(b.pasos<c.pasos)less.push('actividades completadas ('+b.pasos+' contra '+c.pasos+')');
 if(less.length)w.unshift('Esta copia tiene menos '+less.join(' y ')+' que tus datos actuales. Al volver a ella, lo de ahora se reemplaza (antes se guarda una copia para deshacer).');
 if(!full){try{if(CS.user())w.push('Tu sesión de Google está activa: al volver a esta copia también se sincronizará con tu nube y puede reemplazar lo que haya allí.')}catch(e){}}
-const rows=[['Actividades de la ruta',b.pasos+' de '+b.total,c.pasos+' de '+c.total,b.pasos<c.pasos],['Personas',b.personas,c.personas,b.personas<c.personas],['Inscritos (incentivos)',b.inscritos,c.inscritos,b.inscritos<c.inscritos],['Incentivos activos',b.incentivos,c.incentivos,b.incentivos<c.incentivos],['Asistencias a juntas',b.juntas,c.juntas,b.juntas<c.juntas],['Revisiones 1 a 1',b.rev,c.rev,b.rev<c.rev],['Registros de liderazgo',b.lider,c.lider,b.lider<c.lider],['Miembros de tu equipo',b.miembros,c.miembros,b.miembros<c.miembros],['Reportes recibidos',b.reportes,c.reportes,b.reportes<c.reportes],['Ciclos completados',b.ciclos,c.ciclos,b.ciclos<c.ciclos]].filter((r,i)=>i<3||r[1]||r[2]);
+const rows=[['Actividades del plan activo',b.pasos+' de '+b.total,c.pasos+' de '+c.total,b.pasos<c.pasos],['Planes y ciclos',b.planes,c.planes,b.planes<c.planes],['Personas',b.personas,c.personas,b.personas<c.personas],['Inscritos (incentivos)',b.inscritos,c.inscritos,b.inscritos<c.inscritos],['Incentivos activos',b.incentivos,c.incentivos,b.incentivos<c.incentivos],['Asistencias a juntas',b.juntas,c.juntas,b.juntas<c.juntas],['Revisiones 1 a 1',b.rev,c.rev,b.rev<c.rev],['Registros de liderazgo',b.lider,c.lider,b.lider<c.lider],['Miembros de tu equipo',b.miembros,c.miembros,b.miembros<c.miembros],['Reportes recibidos',b.reportes,c.reportes,b.reportes<c.reportes],['Ciclos completados',b.ciclos,c.ciclos,b.ciclos<c.ciclos]].filter((r,i)=>i<3||r[1]||r[2]);
 return`<button class="b t sm" data-a="bkback">← Cancelar</button><div class="hd"><div class="hi">Vista previa de la restauración</div><div class="m">Todavía no se ha cambiado nada.</div></div>${head(p)}
 ${full?'<div class="c"><div class="m">Este teléfono todavía no tiene datos tuyos, así que se cargará todo el respaldo.</div></div>':''}
 ${w.map(x=>`<div class="c" style="border-color:var(--or)"><div class="m" style="color:var(--ort)">⚠ ${E(x)}</div></div>`).join('')}
@@ -1064,8 +1075,241 @@ if(!r.ok){busy=false;const d=document.getElementById('bkbusy');if(d)d.remove();t
 /* "Reiniciar todo" borra el estado: se guarda antes una copia recuperable */
 const _rs=A.reset;A.reset=function(e,v){try{if(S.tmp&&S.tmp.cf==='reset')keep('p30_prereset','Antes de «Reiniciar todo»')}catch(x){}return _rs.apply(this,arguments)};
 try{const m=sessionStorage.getItem('p30_bkmsg');if(m){sessionStorage.removeItem('p30_bkmsg');setTimeout(()=>toast(m),700)}}catch(e){}
-return{mergeStates,covers,pristine,secN,secSum,plan,verifyExport,canon,build,parse,counts,check,snap,scrub,apply,keep,copies,loadCopy,FMT,BUILD,_setPend:p=>{pend=p}}})();
+return{mergeStates,covers:coversAll,coversRaw:covers,pristine,secN,secSum,plan,verifyExport,canon,build,parse,counts,check,snap,scrub,apply,keep,copies,loadCopy,FMT,BUILD,_setPend:p=>{pend=p}}})();
 window.BK=BK;
+
+/* ===== CAMBIAR MI PLAN: CICLOS DE PLAN (build planes-1) =====
+   Cada plan que empiezas es un ciclo independiente (id propio). Solo uno está activo.
+   Los datos del ciclo ACTIVO viven donde siempre (S.res, S.acts, S.g, S.bien) para no tocar el resto de la app;
+   los de los demás ciclos se guardan dentro de su registro (S.cy.items[].data). S.cyid = a qué ciclo pertenecen
+   los datos "vivos". Personas, seguimientos, liderazgo, juntas e incentivos NO pertenecen a ningún ciclo. */
+const CY=(()=>{
+const isO=x=>!!x&&typeof x=='object'&&!Array.isArray(x),clone=x=>JSON.parse(JSON.stringify(x===undefined?null:x));
+const OBJ=C.diag[0],RT=[['venta'],['c4x30'],['l4x30'],['mixto',false],['mixto',true],['bienestar']];
+const LIM_WARN=700000,LIM_MAX=900000;
+let msg=null,err='';
+const canon=x=>{if(Array.isArray(x))return'['+x.map(canon).join(',')+']';if(isO(x))return'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+canon(x[k])).join(',')+'}';return JSON.stringify(x===undefined?null:x)};
+const h32=s=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return(h>>>0).toString(36)};
+const stepsOf=(r,team)=>r=='mixto'?[...C.routes.venta.steps,...C.routes[team?'l4x30':'c4x30'].steps]:((C.routes[r]||{}).steps||[]);
+const goalOf=(r,team)=>r=='venta'?0:r=='c4x30'?1:r=='l4x30'?2:r=='mixto'?(team?4:3):r=='bienestar'?5:-1;
+const rutaName=(r,team)=>r=='mixto'?'MIXTO 30 · Ventas + '+(team?'Liderazgo':'Construcción'):((C.routes[r]||{}).name||String(r));
+function cst(res,r,team){const n=stepsOf(r,team).length;let d=0,last='';for(let i=0;i<n;i++){const x=res&&res[r+i];if(x){d++;if(x.f&&String(x.f)>last)last=String(x.f)}}return{total:n,done:d,pct:n?Math.round(d/n*100):0,last}}
+const today=()=>new Date().toISOString().slice(0,10);
+const cid1=(uid,r,team)=>'cy_'+h32(String(uid||'')+'|'+r+'|'+(team?1:0))+'_1';
+const nid=()=>'cy_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const find=id=>S.cy&&S.cy.items.find(x=>x.id===id);
+const hasLive=d=>!!d&&['res','acts','g','bien'].some(k=>isO(d[k])&&Object.keys(d[k]).length);
+function itemFromState(s,over){const r=s.r,team=!!s.team,m=cst(s.res,r,team),g=goalOf(r,team);let first='';Object.keys(s.res||{}).forEach(k=>{const f=s.res[k]&&s.res[k].f;if(f&&(!first||String(f)<first))first=String(f)});
+return Object.assign({id:cid1(s.uid,r,team),n:1,goal:g,plan:OBJ[g]||'',r,team,ruta:rutaName(r,team),start:first||today(),end:'',status:'activo',total:m.total,done:m.done,pct:m.pct,last:m.last,at:Date.now()},over||{})}
+/* estado "canónico": todos los ciclos con sus datos dentro; sin datos vivos sueltos (para combinar respaldos sin mezclar ciclos) */
+const inferR=st=>{const ks=['res','acts','g'].flatMap(k=>isO(st[k])?Object.keys(st[k]):[]);const p=new Set(ks.map(k=>(/^([a-z0-9]*[a-z])\d+$/.exec(k)||[])[1]).filter(Boolean));const q=[...p][0];return p.size==1&&(C.routes[q]||q=='mixto')?q:null};
+/* estado con datos sueltos pero sin plan identificable: no se puede asignar a un ciclo */
+const orphan=st=>isO(st)&&!st.r&&!(isO(st.cy)&&Array.isArray(st.cy.items)&&st.cy.items.length)&&hasLive(st)&&!inferR(st);
+function canonState(st){const s=clone(st);if(!s.r&&hasLive(s)&&!(isO(s.cy)&&Array.isArray(s.cy.items)&&s.cy.items.length)){const r=inferR(s);if(r)s.r=r}let c=s.cy;
+if(!isO(c)||!Array.isArray(c.items)){c={v:1,active:null,items:[],verified:true};if(s.r){const it=itemFromState(s);c.items.push(it);c.active=it.id;s.cyid=it.id}}
+const seen=new Set();c.items=c.items.filter(x=>isO(x)&&x.id&&!seen.has(x.id)&&seen.add(x.id));
+let L=c.items.find(x=>x.id===s.cyid)||c.items.find(x=>x.id===c.active);
+const live={res:s.res,acts:s.acts,g:s.g,bien:s.bien};s.__live=['res','acts','g','bien'].filter(k=>s[k]!==undefined);
+if(L&&(hasLive(live)||!L.data))L.data=clone({res:live.res||{},acts:live.acts||{},g:live.g||{},bien:live.bien||{}});
+if(L)['res','acts','g','bien','cyid'].forEach(k=>{delete s[k]});s.cy=c;return s}
+/* inverso: pone los datos del ciclo activo como datos vivos */
+function materialize(s){const had=new Set(s.__live||[]);delete s.__live;const c=s.cy;if(!isO(c)||!Array.isArray(c.items))return s;
+c.items.forEach(x=>{if(x.id!==c.active&&x.status=='activo')x.status='pausado'});
+const it=c.items.find(x=>x.id===c.active);if(!it)return s;
+const d=it.data||{};['res','acts','g'].forEach(k=>{const v=d[k]||{};if(Object.keys(v).length||had.has(k)||s[k]!==undefined)s[k]=clone(v);else delete s[k]});if(isO(d.bien)&&Object.keys(d.bien).length)s.bien=clone(d.bien);else if(s.bien===undefined||!isO(s.bien))delete s.bien;
+delete it.data;it.status='activo';s.cyid=it.id;
+if(it.r){s.r=it.r;if(it.team||s.team!==undefined)s.team=!!it.team}
+const m=cst(s.res,it.r,!!it.team);it.total=m.total;it.done=m.done;it.pct=m.pct;if(m.last)it.last=m.last;
+c.items.forEach(x=>{if(x.id!==it.id&&x.data){const q=cst(x.data.res,x.r,!!x.team);x.total=q.total;x.done=q.done;x.pct=q.pct;if(q.last)x.last=q.last}});
+return s}
+const cn=()=>{const it=S.cy&&find(S.cy.active);return(it&&it.cn)||(S.cycles||[]).length};
+const nPlans=st=>isO(st&&st.cy)&&Array.isArray(st.cy.items)?st.cy.items.length:(st&&st.r?1:0);
+/* ----- consistencia (se ejecuta al abrir y después de recibir datos de la nube) ----- */
+function liveData(){return{res:clone(S.res||{}),acts:clone(S.acts||{}),g:clone(S.g||{}),bien:clone(S.bien||{})}}
+function setLive(d){S.res=clone((d&&d.res)||{});S.acts=clone((d&&d.acts)||{});S.g=clone((d&&d.g)||{});if(d&&isO(d.bien)&&Object.keys(d.bien).length)S.bien=clone(d.bien);else delete S.bien}
+function fix(){const c=S.cy;if(!isO(c)||!Array.isArray(c.items))return false;let ch=false;
+const seen=new Map();c.items=c.items.filter(x=>{if(!isO(x)||!x.id)return false;if(seen.has(x.id)){const a=seen.get(x.id);if(!a.data&&x.data)a.data=x.data;ch=true;return false}seen.set(x.id,x);return true});
+if(!S.r&&!c.items.length)return ch;
+if(S.r&&!c.items.length){const it=itemFromState(S);c.items.push(it);c.active=it.id;S.cyid=it.id;ch=true}
+if(!S.cyid||!find(S.cyid)){if(c.active&&find(c.active)){S.cyid=c.active;ch=true}else if(c.items.length){S.cyid=c.items[0].id;c.active=S.cyid;ch=true}}
+if(!c.active||!find(c.active)){c.active=S.cyid;ch=true}
+if(c.active!==S.cyid){const tgt=find(c.active),cur=find(S.cyid);
+ if(tgt&&tgt.data&&cur){const m=cst(S.res,cur.r,!!cur.team);cur.data=liveData();cur.at=Date.now();cur.total=m.total;cur.done=m.done;cur.pct=m.pct;if(m.last)cur.last=m.last;cur.status=m.pct>=100?'completado':'pausado';if(cur.status=='completado'&&!cur.end)cur.end=today();
+  setLive(tgt.data);S.cyid=tgt.id;S.r=tgt.r;S.team=!!tgt.team;ch=true}
+ else{c.active=S.cyid;ch=true}}
+const it=find(S.cyid);
+if(it){if(S.r&&S.r!==it.r){const mine=Object.keys(S.res||{}).concat(Object.keys(S.acts||{})).some(k=>k.startsWith(S.r));if(mine){it.r=S.r;it.team=!!S.team;ch=true}else{S.r=it.r;S.team=!!it.team;ch=true}}
+ if(it.status!=='activo'){it.status='activo';ch=true}}
+c.items.forEach(x=>{if(x.id!==c.active&&x.status=='activo'){x.status='pausado';ch=true}});
+return ch}
+/* ----- mantiene al día el resumen del ciclo activo (se llama desde save) ----- */
+const localOnly=()=>!(window.CS&&CS.enabled&&CS.enabled());
+function sync(){const c=S.cy;if(!c||!c.verified||!c.active||S.cyid!==c.active||!S.r)return;const it=find(c.active);if(!it)return;
+const team=!!S.team,m=cst(S.res,S.r,team),g=goalOf(S.r,team);let ch=false;
+const set=(k,v)=>{if(it[k]!==v){it[k]=v;ch=true}};
+set('r',S.r);set('team',team);set('goal',g);set('plan',OBJ[g]||'');set('ruta',rutaName(S.r,team));set('total',m.total);set('done',m.done);set('pct',m.pct);if(m.last)set('last',m.last);
+if(it.status!=='activo')set('status','activo');
+if(it.data&&localOnly()){delete it.data;ch=true}
+if(ch)it.at=Date.now()}
+/* cuando la nube y el teléfono ya coinciden, ya no hace falta la copia de seguridad del ciclo activo */
+function tidy(){const c=S.cy;if(!c||!c.verified||!c.active)return;const it=find(c.active);if(!it||!it.data)return;try{if(CS.inSync&&CS.inSync(['plans','activities'])){delete it.data;save()}}catch(e){}}
+/* ----- grabación segura: una sola escritura, releída y comprobada ----- */
+function persist(){const s=JSON.stringify(S);localStorage.setItem('p30',s);if(localStorage.getItem('p30')!==s)throw new Error('verify');return s}
+const FIELDS=['cy','cyid','r','team','res','acts','g','bien','tab','open','stage'];
+const grab=()=>{const o={};FIELDS.forEach(k=>{o[k]=S[k]===undefined?undefined:clone(S[k])});return o};
+const restore=o=>{FIELDS.forEach(k=>{if(o[k]===undefined)delete S[k];else S[k]=o[k]})};
+const size=()=>{try{return JSON.stringify({cy:S.cy}).length}catch(e){return 0}};
+function swap(kind,arg){
+if(!S.cy||!S.cy.verified)return{ok:false,msg:'El cambio de plan no está disponible porque la actualización de tus datos no se pudo verificar. No se cambió nada.'};
+if(!S.r||!S.cyid||!find(S.cyid))return{ok:false,msg:'Todavía no tienes un plan activo que guardar. Completa tu diagnóstico primero.'};
+let raw0=null;try{raw0=localStorage.getItem('p30')}catch(e){}
+const pre=grab(),preLive=canon({res:S.res||{},acts:S.acts||{},g:S.g||{},bien:S.bien||{}}),ppl=(S.people||[]).length,pcanon=canon(S.people||[]);
+try{
+ sync();const cur=find(S.cyid),m=cst(S.res,cur.r,!!cur.team);
+ cur.data=liveData();cur.total=m.total;cur.done=m.done;cur.pct=m.pct;if(m.last)cur.last=m.last;cur.at=Date.now();
+ cur.status=m.pct>=100?'completado':'pausado';cur.end=cur.status=='completado'?today():'';
+ let tgt;
+ if(kind=='new'){const g=+arg,rt=RT[g];if(!rt)throw new Error('goal');
+  const team=g==3?false:(g==4||g==2)?true:!!S.team,r=rt[0],n=S.cy.items.filter(x=>x.goal===g).length+1;
+  const id=nid();tgt={id,cn:id,n,goal:g,plan:OBJ[g],r,team,ruta:rutaName(r,team),start:today(),end:'',status:'activo',total:stepsOf(r,team).length,done:0,pct:0,last:'',at:Date.now()};
+  S.cy.items.push(tgt);setLive({})}
+ else{tgt=find(arg);if(!tgt||tgt.id===cur.id)throw new Error('target');if(!tgt.data)return restore(pre),{ok:false,msg:'No encontré los datos guardados de ese plan, así que no cambié nada.'};
+  setLive(tgt.data);tgt.status='activo';tgt.end=''}
+ S.cy.active=tgt.id;S.cyid=tgt.id;S.r=tgt.r;S.team=!!tgt.team;S.open=null;S.v=null;S.tab='ruta';S.tmp={};
+ if(size()>LIM_MAX)throw new Error('size');
+ persist();
+ /* comprobación: lo guardado es exactamente lo que había */
+ const back=JSON.parse(localStorage.getItem('p30')),bc=(back.cy.items.find(x=>x.id===cur.id)||{}).data;
+ if(!bc||canon(bc)!==preLive)throw new Error('check-prev');
+ if((back.people||[]).length!==ppl||canon(back.people||[])!==pcanon)throw new Error('check-people');
+ if(back.cyid!==tgt.id||back.cy.active!==tgt.id)throw new Error('check-active');
+ if(kind=='new'&&(Object.keys(back.res||{}).length||Object.keys(back.acts||{}).length))throw new Error('check-new');
+ if(kind!='new'&&canon(back.res||{})!==canon((tgt.data||{}).res||{}))throw new Error('check-resume');
+ return{ok:true,item:tgt,prev:cur}}
+catch(e){restore(pre);try{if(raw0!=null)localStorage.setItem('p30',raw0)}catch(_){}
+ const big=e&&e.message=='size';
+ return{ok:false,msg:big?'Tu historial de planes ya es muy grande para guardarse con seguridad. Exporta un respaldo (Perfil › Respaldo de mis datos) antes de seguir. No se cambió nada y tu plan actual sigue igual.':'No se pudo guardar tu plan actual, así que no cambié de plan. Tu plan, tus actividades, respuestas y progreso siguen exactamente como estaban. Revisa el espacio de tu teléfono e inténtalo de nuevo.'}}}
+/* confirmación real de la nube: solo cuando Firebase respondió y las secciones coinciden */
+async function cloud(){const set=(t,k)=>{msg={t,k};try{if(S.tab=='ruta'&&!S.v)render()}catch(e){}};
+if(window.__RO)return set('Modo PRUEBA: guardado solo en este dispositivo. La nube real no se toca ni se sincroniza.','warn');
+if(!window.CS||!CS.enabled()||!CS.user())return set('Guardado en este dispositivo. La nube no está activa en esta sesión, así que aún no se sincroniza.','warn');
+set('Guardado en este dispositivo. Sincronizando con la nube…','warn');
+try{const r=await CS.saveNow();
+ if(r&&r.offline)return set('Guardado en este dispositivo. Pendiente de sincronizar: no hay conexión. Se enviará a la nube al reconectar.','warn');
+ if(r&&r.ok&&CS.inSync(['plan','plans','activities']))return set('Guardado en este dispositivo y confirmado en la nube ✓','ok');
+ set('Guardado en este dispositivo. Pendiente de sincronizar con la nube; se reintentará automáticamente.','warn')}
+catch(e){set('Guardado en este dispositivo. No se pudo confirmar en la nube todavía ('+String((e&&e.code)||(e&&e.message)||'error')+'); se reintentará.','warn')}}
+/* fusión con un documento "plans" remoto (varios dispositivos): une por id, nunca descarta un ciclo */
+function mergeRemote(r,localAt){const lc=S.cy;if(!lc||!lc.verified)return false;let d;try{d=JSON.parse(r.json)}catch(e){return false}
+const rc=d&&d.cy;if(!isO(rc)||!Array.isArray(rc.items))return false;
+for(const ri of rc.items){if(!isO(ri)||!ri.id)continue;const li=lc.items.find(x=>x.id===ri.id);
+ if(!li)lc.items.push(clone(ri));
+ else if(li.id!==S.cyid){if((ri.at||0)>(li.at||0)){const keep=li.data;Object.assign(li,clone(ri));if(!li.data&&keep)li.data=keep}else if(!li.data&&ri.data)li.data=clone(ri.data)}}
+if((r.updatedAt||0)>(localAt||0)&&rc.active&&lc.items.some(x=>x.id===rc.active))lc.active=rc.active;
+fix();save();return true}
+/* si la nube va a reemplazar los datos vivos de otro ciclo, antes se guardan los locales dentro de su ciclo */
+function beforeTake(k,r){if(k!=='activities'||!S.cy||!S.cy.verified)return;let d;try{d=JSON.parse(r.json)}catch(e){return}
+if(d&&d.cyid&&d.cyid!==S.cyid){const cur=find(S.cyid);if(cur){cur.data=liveData();cur.at=Date.now();save()}}}
+/* ----- migración ----- */
+function boot(){
+try{
+ if(!isO(S.cy)||!Array.isArray(S.cy.items)){
+  let raw0=null;try{raw0=localStorage.getItem('p30')}catch(e){}
+  try{if(raw0&&raw0.length>2&&!localStorage.getItem('p30_precycles'))localStorage.setItem('p30_precycles',JSON.stringify({at:Date.now(),label:'Antes de activar los ciclos de plan',raw:raw0}))}catch(e){}
+  const before={res:canon(S.res||{}),acts:canon(S.acts||{}),g:canon(S.g||{}),people:canon(S.people||[]),d:canon(S.d||{}),p:canon(S.p||null),cycles:canon(S.cycles||[]),r:S.r||null,team:S.team};
+  S.cy={v:1,active:null,items:[],verified:false};
+  if(S.r){const it=itemFromState(S);S.cy.items.push(it);S.cy.active=it.id;S.cyid=it.id}
+  persist();
+  const back=JSON.parse(localStorage.getItem('p30'));
+  const ok=back.cy&&back.cy.items.length===(S.r?1:0)&&canon(back.res||{})===before.res&&canon(back.acts||{})===before.acts&&canon(back.g||{})===before.g&&canon(back.people||[])===before.people&&canon(back.d||{})===before.d&&canon(back.p||null)===before.p&&canon(back.cycles||[])===before.cycles&&(back.r||null)===before.r&&back.team===before.team;
+  if(!ok){delete S.cy;delete S.cyid;try{if(raw0!=null)localStorage.setItem('p30',raw0)}catch(_){}err='La verificación de la actualización no coincidió; tus datos quedaron como estaban.';return}
+  S.cy.verified=true;persist();
+ }else{
+  const ch=fix();if(!S.cy.verified&&S.cy.items.every(x=>x&&x.id)){S.cy.verified=true}
+  if(ch||!S.cy.verified)persist();
+ }
+}catch(e){
+ err='No se pudo preparar el cambio de plan en este dispositivo ('+String(e&&e.message||e)+'). Tus datos no se tocaron.';
+ try{if(S.cy&&!S.cy.verified){delete S.cy;delete S.cyid}}catch(_){}
+}}
+function onAssign(){if(!S.cy||!Array.isArray(S.cy.items))S.cy={v:1,active:null,items:[],verified:true};
+if(!S.cy.active&&S.r){const it=itemFromState(S);const old=find(it.id);if(!old){S.cy.items.push(it)}S.cy.active=it.id;S.cyid=it.id;if(old&&old.data){setLive(old.data);delete old.data}}
+sync()}
+/* ===== pantallas ===== */
+const fd=s=>{if(!s)return'—';try{const [y,m,d]=String(s).slice(0,10).split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'})}catch(e){return String(s)}};
+const ST={activo:'Activo',pausado:'Pausado',completado:'Completado'};
+const title=it=>E(it.ruta||rutaName(it.r,it.team))+' · Ciclo '+(it.n||1);
+const mine=g=>(S.cy?S.cy.items:[]).filter(x=>x.goal===g);
+const live=it=>it.id===S.cyid;
+const bk=()=>`<button class="b t sm" data-a="cerrar">← Volver</button>`;
+function bar2(){if(!S.cy||!S.cy.verified){return err?`<div class="c" role="status"><div class="m">${E(err)}</div></div>`:''}
+const n=S.cy.items.filter(x=>x.id!==S.cy.active).length,big=size()>LIM_WARN;
+return`<div class="row2" style="margin:0 0 10px"><button class="b sm s" style="margin:0" data-a="cyChange">Cambiar mi plan</button><button class="b sm t" style="margin:0" data-a="cyList">Mis planes anteriores${n?' ('+n+')':''}</button></div>${msg?`<div class="c" role="status" style="${msg.k=='ok'?'border-color:var(--ac)':'border-color:var(--or,var(--ac))'}"><div class="m">${E(msg.t)}</div></div>`:''}${big?`<div class="c"><div class="m" style="color:var(--ort)">⚠ Tu historial de planes ya es grande. Exporta un respaldo pronto (Perfil › Respaldo de mis datos).</div></div>`:''}`}
+function chip(){const it=S.cy&&S.cy.verified&&find(S.cy.active);if(!it)return'';return mine(it.goal).length>1?` <span class="tag">Ciclo ${it.n||1}</span>`:''}
+function pickV(){const cur=S.cy&&find(S.cy.active);
+return`${bk()}<h1>Cambiar mi plan</h1><p class="m">Elige tu nuevo objetivo. Tu plan actual se guarda con todo su avance y tus contactos no cambian.</p>${OBJ.map((n,i)=>{const r=RT[i],team=i==3?false:(i==4||i==2)?true:false,k=mine(i).length,isCur=cur&&cur.goal===i;
+return`<div class="c"><div class="row" style="align-items:flex-start"><div style="flex:1"><b>${E(n)}</b>${isCur?' <span class="tag">Plan actual</span>':''}<div class="m">${E(rutaName(r[0],r.length>1?r[1]:team))}${k?' · '+k+(k==1?' plan guardado':' planes guardados'):''}</div></div><button class="b sm${isCur?' s':''}" style="margin:0" data-a="cyPick" data-v="${i}">Elegir</button></div></div>`}).join('')}`}
+function abV(){const g=S.tmp.cyg,n=OBJ[g],oth=mine(g).filter(x=>x.id!==S.cy.active),pa=oth.filter(x=>x.status=='pausado');
+return`<button class="b t sm" data-a="cyChange">← Volver</button><h1>${E(n)}</h1><div class="c"><b>Ya tienes un plan anterior de este tipo.</b><div class="m" style="margin-top:4px">¿Qué deseas hacer?</div></div>
+<div class="c" style="border-color:var(--ac)"><div class="row"><b>Iniciar un nuevo plan</b><span class="tag">RECOMENDADO</span></div><div class="m" style="margin:6px 0">Empiezas desde cero, en 0 %. Tu plan anterior se conserva intacto en «Mis planes anteriores».</div><button class="b" data-a="cyNew">Iniciar un nuevo plan</button></div>
+<div class="c"><b>Continuar mi plan anterior</b><div class="m" style="margin:6px 0">${pa.length?'Elige cuál retomar. Recuperas exactamente su avance, actividades, respuestas y porcentaje.':oth.length?'No hay un plan pausado de este tipo para retomar (los demás están completados). Puedes consultarlos en «Mis planes anteriores».':'No hay otro plan de este tipo para retomar: el que tienes ahora ya es el activo.'}</div><button class="b s" data-a="cyChoose"${pa.length?'':' disabled style="opacity:.45"'}>Continuar mi plan anterior</button></div>`}
+function card(it,btns){return`<div class="c"><div class="row" style="align-items:flex-start"><div style="flex:1"><b>${title(it)}</b><div class="m">${E(it.plan||'')}</div></div><span class="tag">${ST[it.status]||E(it.status)}</span></div><div style="margin:8px 0">${bar(it.pct||0)}</div><div class="m"><b>${it.pct||0} %</b> · ${it.done||0} de ${it.total||0} actividades completadas</div><div class="m">Inicio: ${fd(it.start)} · Última actividad: ${it.last?fd(it.last):'sin actividades'}${it.status=='completado'&&it.end?' · Fin: '+fd(it.end):''}</div>${btns||''}</div>`}
+function chooseV(){const g=S.tmp.cyg,pa=mine(g).filter(x=>x.status=='pausado');
+return`<button class="b t sm" data-a="cyPick" data-v="${g}">← Volver</button><h1>Continuar mi plan anterior</h1><p class="m">${E(OBJ[g])}. Elige cuál retomar.</p>${pa.map(it=>card(it,`<button class="b" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`)).join('')||'<div class="c"><div class="m">No hay planes pausados de este tipo.</div></div>'}`}
+function listV(){const c=S.cy,act=c&&find(c.active),prev=c?c.items.filter(x=>x.id!==c.active).sort((a,b)=>String(b.last||b.start||'').localeCompare(String(a.last||a.start||''))||(b.at||0)-(a.at||0)):[];
+const leg=(S.cycles||[]).map((x,i)=>[x,i]).filter(([x])=>!x.cyid);
+return`${bk()}<h1>Mis planes anteriores</h1><p class="m">Cada plan que empiezas se guarda como un ciclo independiente. Aquí solo consultas; para seguir con uno, usa «Retomar este plan».</p>
+${act?`<div class="m" style="margin:10px 2px 4px">PLAN ACTUAL</div>${card(act)}`:''}
+<div class="m" style="margin:10px 2px 4px">ANTERIORES</div>
+${prev.map(it=>card(it,`<div class="row2"><button class="b sm s" style="margin:0" data-a="cyView" data-v="${E(it.id)}">Ver detalles</button>${it.status=='pausado'?`<button class="b sm" style="margin:0" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`:''}</div>`)).join('')||'<div class="c"><div class="m">Todavía no tienes planes anteriores. Cuando cambies de plan, el actual aparecerá aquí.</div></div>'}
+${leg.length?`<div class="m" style="margin:14px 2px 4px">GUARDADOS ANTES DE ESTA VERSIÓN</div>${leg.map(([x,i])=>`<div class="c"><div class="row"><div style="flex:1"><b>${E(x.ruta||'Ciclo guardado')}</b><div class="m">Ciclo ${x.n||i+1} · ${fd(x.fecha)} · ${x.pasos?(x.res||[]).length+' de '+x.pasos+' actividades':'sin detalle de actividades'}</div></div><button class="b sm s" style="margin:0" data-a="cyViewL" data-v="${i}">Ver detalles</button></div></div>`).join('')}`:''}`}
+function personName(id){const p=(S.people||[]).find(x=>String(x.id)===String(id));return p?p.nombre:'Contacto no disponible'}
+function stepRows(r,team,d){const st=stepsOf(r,team),res=d.res||{},acts=d.acts||{},g=d.g||{};
+return st.map((s,i)=>{const k=r+i,x=res[k],a=acts[k]||{},gg=g[k];const list=(a.list||[]).filter(Boolean),ppl=(gg&&gg.ppl)||[];
+return`<details><summary>${i+1}. ${E(s.t)}<span class="m">${x?'✓ Completada':(a.text||list.length||ppl.length)?'En proceso':'Pendiente'}</span></summary>
+${x?`<div class="li"><span style="flex:1"><b>Resultado:</b> ${E(x.r)}<br><span class="m">${fd(x.f)}</span></span></div>`:''}
+${a.text?`<div class="li"><span style="flex:1"><b>Tu respuesta:</b><br>${E(a.text)}</span></div>`:''}
+${list.length?`<div class="li"><span style="flex:1"><b>Tu lista:</b><br>${list.map(E).join('<br>')}</span></div>`:''}
+${ppl.length?`<div class="li"><span style="flex:1"><b>Contactos trabajados:</b><br>${ppl.map(p=>E(personName(p))).join(', ')}</span></div>`:''}
+${!x&&!a.text&&!list.length&&!ppl.length?'<div class="m" style="padding:6px 2px">Sin información en esta actividad.</div>':''}</details>`}).join('')}
+function viewV(){const it=find(S.tmp.cyd);if(!it)return`<button class="b t sm" data-a="cyList">← Volver</button><div class="c"><div class="m">No encontré ese plan.</div></div>`;
+const d=live(it)?liveData():(it.data||{});
+const bien=isO(d.bien)?Object.entries(d.bien).filter(([k,v])=>v):[];
+return`<button class="b t sm" data-a="cyList">← Volver</button><h1>${title(it)}</h1><div class="c"><span class="tag">Solo lectura</span> <span class="tag">${ST[it.status]||''}</span><div style="margin:8px 0">${bar(it.pct||0)}</div><div class="m"><b>${it.pct||0} %</b> · ${it.done||0} de ${it.total||0} actividades completadas</div><div class="m">Objetivo: ${E(it.plan||'')}</div><div class="m">Inicio: ${fd(it.start)} · Última actividad: ${it.last?fd(it.last):'sin actividades'}${it.end?' · Fin: '+fd(it.end):''}</div></div>
+${it.status=='pausado'?`<button class="b" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`:''}
+${stepRows(it.r,!!it.team,d)}
+${bien.length?`<details><summary>Datos de bienestar</summary>${bien.map(([k,v])=>`<div class="li"><span style="flex:1"><b>${E(k)}:</b> ${E(v)}</span></div>`).join('')}</details>`:''}
+<div class="m" style="margin:10px 2px">Tus contactos y seguimientos no pertenecen a un plan: se ven siempre en Personas.</div>`}
+function viewLV(){const x=(S.cycles||[])[+S.tmp.cyl];if(!x)return`<button class="b t sm" data-a="cyList">← Volver</button><div class="c"><div class="m">No encontré ese ciclo.</div></div>`;
+return`<button class="b t sm" data-a="cyList">← Volver</button><h1>${E(x.ruta||'Ciclo guardado')}</h1><div class="c"><span class="tag">Solo lectura</span> <span class="tag">Guardado antes de esta versión</span><div class="m" style="margin-top:6px">Fecha: ${fd(x.fecha)} · ${x.pasos?(x.res||[]).length+' de '+x.pasos+' actividades completadas':'sin detalle de actividades'}</div><div class="m">Este ciclo se guardó con la función anterior «Repetir ciclo», que solo conservaba los resultados de cada actividad, no el texto de tus respuestas.</div></div>${(x.res||[]).map(r=>`<div class="c"><b>${E(r.paso||'')}</b><div class="m">${E(r.r||'')} · ${fd(r.f)}</div></div>`).join('')}`}
+/* ----- confirmación ----- */
+function confirmSheet(kind,arg){S.tmp.cyx={kind,arg};const cur=S.cy&&find(S.cy.active);let det='';
+if(kind=='new')det=`<div class="m" style="margin-bottom:8px">Nuevo plan: <b>${E(OBJ[+arg])}</b>${mine(+arg).length?' (nuevo ciclo, empieza en 0 %)':''}.</div>`;
+else{const t=find(arg);det=t?`<div class="m" style="margin-bottom:8px">Retomarás: <b>${title(t)}</b> (${t.pct||0} %, ${t.done||0} de ${t.total||0} actividades).</div>`:''}
+if(cur)det+=`<div class="m" style="margin-bottom:8px">Se guardará: <b>${title(cur)}</b> (${cur.pct||0} %).</div>`;
+openSheet(`<div style="font-size:18px;font-weight:700">¿Estás seguro de que deseas cambiar de plan?</div><div class="m" style="margin:6px 0 10px">Guardaremos tu plan actual con todas sus actividades, respuestas y progreso. Tus contactos y demás registros permanecerán disponibles.</div>${det}<button class="b" data-a="cyGo">Confirmar cambio</button><button class="b t" data-a="cyCancel">Cancelar</button>`)}
+Object.assign(A,{
+cyChange(){S.tmp.cyx=null;S.v=pickV},
+cyList(){closeSheet();S.v=listV},
+cyPick(e,v){const g=+v;S.tmp.cyg=g;if(mine(g).length)S.v=abV;else confirmSheet('new',g)},
+cyNew(){confirmSheet('new',S.tmp.cyg)},
+cyChoose(){S.v=chooseV},
+cyResume(e,v){confirmSheet('resume',v)},
+cyView(e,v){S.tmp.cyd=v;S.v=viewV},
+cyViewL(e,v){S.tmp.cyl=v;S.v=viewLV},
+cyCancel(){S.tmp.cyx=null;closeSheet()},
+cyGo(){const x=S.tmp.cyx;if(!x)return closeSheet();
+const r=swap(x.kind,x.arg);
+if(!r.ok){openSheet(`<div style="font-size:18px;font-weight:700">No se cambió tu plan</div><div class="m" style="margin:6px 0 10px">${E(r.msg)}</div><button class="b" data-a="shx">Entendido</button>`);return}
+closeSheet();msg=null;
+toast('Plan anterior guardado. Ahora estás en: '+r.item.ruta+(r.item.n>1?' · Ciclo '+r.item.n:'')+'.');
+setTimeout(()=>{cloud()},50)},
+repetir(){const g=S.cy&&S.cy.verified&&S.r?goalOf(S.r,!!S.team):-1;
+if(g<0){const a=steps(),snap={};a.forEach((_,i)=>{const k=key(i);if(S.g[k])snap[k]=JSON.parse(JSON.stringify(S.g[k]))});S.cycles.push({n:S.cycles.length+1,fecha:today(),ruta:rname(),r:S.r,pasos:a.length,res:a.map((s,i)=>S.res[key(i)]&&Object.assign({paso:s.t},S.res[key(i)])).filter(Boolean),g:snap,stats:stats()});a.forEach((_,i)=>{delete S.res[key(i)];delete S.g[key(i)]});S.tab='inicio';S.open=null;S.v=null;toast('Nuevo ciclo iniciado. El anterior quedó guardado.');return}
+confirmSheet('new',g)}});
+return{canonState,orphan,materialize,nPlans,fix,sync,tidy,boot,onAssign,mergeRemote,beforeTake,stats:cst,cn,goalOf,itemFromState,bar:bar2,chip,get err(){return err},get msg(){return msg},_swap:swap,find,OBJ}})();
+window.CY=CY;
+try{CY.boot()}catch(e){}
 
 /* ===== ETAPA 1: Google + nube (Firebase Auth + Firestore). Local primero, nube después ===== */
 /* ===== MODO PRUEBA: SOLO LECTURA ===== */
@@ -1073,7 +1317,7 @@ window.__RO=true;
 const ISO=/[?&]aislado=1(&|$)/.test(location.search);
 const CS=(()=>{
 let cfg={},on=false;
-const SEC={profile:['p','d','stage','uid','fbUid'],plan:['r','team'],activities:['acts','res','g','sup'],people:['people','ins'],meetings:['jt','rev'],incentives:['inc'],progress:['ev','cycles'],settings:['mode','eqt','lt','role'],team:['L','fbIn','ld']};
+const SEC={profile:['p','d','stage','uid','fbUid'],plan:['r','team'],plans:['cy'],activities:['acts','res','g','sup','bien','cyid'],people:['people','ins'],meetings:['jt','rev'],incentives:['inc'],progress:['ev','cycles'],settings:['mode','eqt','lt','role'],team:['L','fbIn','ld']};
 const MK='p30meta',st={state:'pending',user:null,gate:'loading',last:0,errCode:'',errMsg:'',errRaw:''};
 let meta={},tm=null,busy=false,api=null,lastRec=0,wd=null;
 const lm=()=>{try{meta=JSON.parse(localStorage.getItem(MK))||{}}catch(e){meta={}}['rev','hash','base','localAt','cur'].forEach(k=>meta[k]=meta[k]||{})},sm=()=>{try{localStorage.setItem(MK,JSON.stringify(meta))}catch(e){}};
@@ -1091,15 +1335,15 @@ for(const k in secs){let d={};try{d=JSON.parse(secs[k].json)}catch(e){continue}O
 localStorage.setItem('p30',JSON.stringify(cur));sm();try{sessionStorage.setItem('p30_rl',String(Date.now()))}catch(e){}location.reload()}
 async function pushSec(k,json,rem){throw Object.assign(new Error('PRUEBA_SOLO_LECTURA'),{code:'solo-lectura'});const now=Date.now(),r=await api.write(st.user.uid,k,{json,updatedAt:now,userId:st.user.uid},rem?rem.rev:0);if(!r.ok)throw new Error('conflict');meta.rev[k]=r.rev;meta.hash[k]=hs(json);meta.base[k]=now;meta.cur[k]=meta.hash[k];sm()}
 async function reconcile(thr){if(thr){let n=0;while(busy&&n++<100)await new Promise(r=>setTimeout(r,100))}if(!on||!api||!st.user||st.gate||busy||(paused&&window.__bkv&&S.v))return;if(navigator.onLine===false)return setS('offline');busy=true;setS('syncing');
-try{const remote=await api.getAll(st.user.uid),sn=snap(),take={},up=[];
+try{const remote=await api.getAll(st.user.uid),sn=snap(),take={},up=[];let merged=false;
 for(const k in SEC){const r=remote[k],h=hs(sn[k]),dirty=meta.hash[k]!==h;
 if(!r){if((dirty||meta.rev[k]===undefined)&&hasData())up.push(k);continue}
 if(r.rev===meta.rev[k]){if(dirty)up.push(k);continue}
 if(!dirty){take[k]=r;continue}
-if((meta.localAt[k]||0)>r.updatedAt)up.push(k);else take[k]=r}
+if(k==='plans'&&window.CY&&CY.mergeRemote(r,meta.localAt[k]||0)){up.push(k);merged=true;continue}if((meta.localAt[k]||0)>r.updatedAt)up.push(k);else{try{window.CY&&CY.beforeTake(k,r)}catch(e){}take[k]=r}}
 if(Object.keys(take).length){let rl=0;try{rl=+sessionStorage.getItem('p30_rl')||0}catch(e){}if(Date.now()-rl>3000){applyRemote(take);return}}
 for(const k of up){/* PRUEBA: solo lectura, nada se sube */}
-st.last=Date.now();meta.last=st.last;st.syncErr=null;sm();setS('synced')}
+st.last=Date.now();meta.last=st.last;st.syncErr=null;sm();setS('synced');try{window.CY&&CY.tidy()}catch(e){}}
 catch(e){st.syncErr={code:String((e&&e.code)||(e&&e.message)||'error'),at:Date.now()};setS(navigator.onLine===false?'offline':'error');if(thr)throw e}finally{busy=false}}
 async function readAll(){if(!on||!api||!st.user||st.gate)return{off:true};if(navigator.onLine===false)return{offline:true};try{const remote=await Promise.race([api.getAll(st.user.uid),new Promise((_,no)=>setTimeout(()=>no(new Error('timeout')),15000))]);const o={};for(const k in SEC)o[k]={remote:remote[k]||null};return{ok:true,info:o}}catch(e){return{err:String((e&&e.code)||(e&&e.message)||'error')}}}
 let paused=false,pt=null;
@@ -1147,7 +1391,8 @@ const gateHtml=()=>{if(st.gate=='loading')return`<div class="em" style="margin-t
 if(st.gate=='error')return`<div class="c" style="margin-top:12vh"><h2 style="margin-top:0">No pudimos iniciar tu sesión</h2><div class="m">${E(st.errMsg)}</div><div class="m" style="margin-top:8px">Código: ${E(st.errCode)}${st.errRaw?' · '+E(st.errRaw):''}</div></div><button class="b" data-a="csRetry">Intentar de nuevo</button>`;
 if(st.gate=='login')return`<div class="top" style="margin-top:12vh;text-align:center;padding:28px 20px"><div class="hi" style="font-size:24px">TU GUÍA DE ACCIÓN</div><p class="m" style="margin:10px 0 0">Inicia sesión para conservar tu información y continuar desde cualquier dispositivo.</p></div><button class="b" data-a="csIn">Continuar con Google</button>`;
 if(st.gate=='link')return`<div class="c" style="margin-top:12vh"><h2 style="margin-top:0">Encontramos información guardada en este dispositivo.</h2><div class="m">Puedes llevarla a tu cuenta. Siempre se conserva una copia de seguridad en este teléfono.</div></div><button class="b" data-a="csLink">Vincular mis datos a esta cuenta</button><button class="b s" data-a="csNew">Empezar como nuevo</button>`;return''};
-return{readAll,pause,SEC,enabled:()=>on,saveNow,errCode:()=>st.syncErr?st.syncErr.code:'',state:()=>st.state,label:()=>LBL[st.state],dot:()=>DOT[st.state],lastTxt,user:()=>st.user,touch,init,attach,sync:()=>reconcile(),paint,
+const inSync=ks=>{try{const sn=snap();return ks.every(k=>meta.rev[k]>0&&meta.hash[k]===hs(sn[k]))}catch(e){return false}};
+return{readAll,pause,SEC,inSync,enabled:()=>on,saveNow,errCode:()=>st.syncErr?st.syncErr.code:'',state:()=>st.state,label:()=>LBL[st.state],dot:()=>DOT[st.state],lastTxt,user:()=>st.user,touch,init,attach,sync:()=>reconcile(),paint,
 gate(){if(!st.gate)return false;try{$('#nav').style.display='none';$('#app').innerHTML=gateHtml()}catch(e){}return true},
 async signIn(){if(!api)return;try{await api.signIn()}catch(e){const c=(e&&e.code)||'';toast(/closed|cancelled/.test(c)?'Inicio de sesión cancelado.':c=='auth/unauthorized-domain'?'Este dominio no está autorizado en Firebase.':'No se pudo iniciar sesión. Intenta de nuevo.')}},
 async signOut(){try{await reconcile()}catch(e){}try{await api.signOut()}catch(e){toast('No se pudo cerrar la sesión.')}},
@@ -1163,6 +1408,8 @@ csOutAsk(){openSheet(`<div style="font-size:18px;font-weight:700">¿Cerrar sesi�
 csOut(){closeSheet();toast('Cerrando sesión…');return CS.signOut()}});
 window.CS=CS;
 (()=>{const d=document.createElement('div');d.id='pruebabar';d.setAttribute('role','status');d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:300;background:#b45309;color:#fff;font:700 12px/1.2 system-ui,sans-serif;text-align:center;padding:calc(4px + env(safe-area-inset-top,0px)) 6px 4px;pointer-events:none';d.textContent=ISO?'PRUEBA · AISLADO · sin nube, sin tus datos reales':'PRUEBA · SOLO LECTURA · no se guarda nada en tu nube';document.body.appendChild(d);document.body.style.paddingTop='calc(26px + env(safe-area-inset-top,0px))'})();
+window.__demo=()=>{const P=Array.from({length:10},(_,i)=>({id:'demo'+i,nombre:'Persona Ejemplo '+(i+1),tipo:i<7?'Prospecto':'Cliente',interes:'Ambos',estado:i<7?'Por contactar':'Cliente',tel:'',createdAt:'2026-10-0'+(i%9+1)}));const res={};for(let i=0;i<5;i++)res['venta'+i]={r:'Resultado de ejemplo '+(i+1),f:'2026-10-0'+(i+1)};const st={tab:'ruta',p:{n:'Usuario de prueba',a:'',t:'',f:'2026-10-01',l:''},d:{goal:'0',team:'No',exp:'Pocas veces'},r:'venta',team:false,stage:'app',mode:'yo',role:'miembro',acts:{venta0:{text:'Meta de ejemplo: 5 conversaciones por semana'},venta1:{list:P.map(p=>p.nombre)}},res,g:{venta2:{ppl:P.slice(0,3).map(p=>p.id),d:Object.fromEntries(P.slice(0,3).map(p=>[p.id,{res:'Mostró interés'}]))}},people:P,rev:[],ev:[],cycles:[]};localStorage.setItem('p30',JSON.stringify(st));location.reload()};
+(()=>{if(!ISO)return;let has=false;try{has=!!(S.p&&S.p.n)}catch(e){}if(has)return;const b=document.createElement('button');b.id='demobtn';b.textContent='Cargar datos de EJEMPLO (ficticios)';b.style.cssText='position:fixed;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:301;background:#14213d;color:#fff;border:0;border-radius:12px;padding:10px 12px;font:700 13px system-ui';b.onclick=()=>window.__demo();document.body.appendChild(b)})();
 CS.init();
 render();
 </script></body></html>
