@@ -55,6 +55,91 @@ details.ac,details{background:var(--card);border:1px solid var(--ln);border-radi
 <script>window.addEventListener("error",function(e){var a=document.getElementById("app");if(a&&a.textContent.indexOf("Cargando tu información")>-1){a.innerHTML="";var c=document.createElement("div");c.className="c";c.style.marginTop="12vh";var b=document.createElement("b");b.textContent="No pudimos iniciar la aplicación";var m=document.createElement("div");m.className="m";m.textContent=String(e.message||"Error desconocido");c.appendChild(b);c.appendChild(m);a.appendChild(c);var r=document.createElement("button");r.className="b";r.textContent="Intentar de nuevo";r.onclick=function(){location.reload()};a.appendChild(r)}});</script>
 </head><body><main id="app"><div class="em" style="margin-top:30vh"><div class="m">Cargando tu información…</div></div></main><nav class="nav" id="nav"></nav>
 <script>
+/* ===== LIMPIEZA DE PLANES ANTIGUOS (SOLO VARIANTE DE PRUEBA AISLADA: llaves p30, ?aislado=1) =====
+   Retira ÚNICAMENTE lo que pertenece en exclusiva a los 6 planes anteriores. Antes guarda una copia técnica
+   recuperable (p30_prelimpieza). Nunca toca Personas, compras, seguimientos, notas, equipo, incentivos,
+   configuración ni respaldos. Idempotente: marca p30_limpio3 al terminar. */
+const LIMP3=(()=>{
+const KEY='p30',COPY='p30_prelimpieza',PREV='p30_prelimpieza_prev',FLAG='p30_limpio3';
+const NEWR=['pbienestar','pventas','pliderazgo'];
+const LEGP=/^(venta|c4x30|l4x30|mixto|bienestar)\d+$/;           // claves de pasos de las rutas antiguas
+const isO=x=>x&&typeof x=='object'&&!Array.isArray(x);
+const clone=x=>JSON.parse(JSON.stringify(x));
+const canon=x=>JSON.stringify(x);
+const GLOBAL=['people','p3','ins','inc','rev','ev','jt','L','ld','sup','p','role','mode','uid','tab','stage'];
+function hasLegacy(st){
+  if(st.r&&!NEWR.includes(st.r))return true;
+  if(Array.isArray(st.cycles)&&st.cycles.length)return true;
+  if(isO(st.bien)&&Object.keys(st.bien).length)return true;
+  if(st.cy&&Array.isArray(st.cy.items)&&st.cy.items.some(x=>!NEWR.includes(x.r)))return true;
+  for(const m of ['res','acts','g'])if(isO(st[m])&&Object.keys(st[m]).some(k=>LEGP.test(k)))return true;
+  return false}
+/* Devuelve {st,inf}: estado limpio (copia) e informe de lo retirado. No escribe nada. */
+function limpiar(src){
+  const st=clone(src),inf={ciclos:0,pasosRes:0,pasosActs:0,pasosG:0,bien:0,cycles:0,dGoal:false,rutaActiva:null,activo:null};
+  const items=(st.cy&&Array.isArray(st.cy.items))?st.cy.items:[];
+  const legacyActive=!!st.r&&!NEWR.includes(st.r);
+  inf.rutaActiva=st.r||null;
+  /* 1) ciclos antiguos (las rutas nuevas se conservan tal cual) */
+  const keep=items.filter(x=>NEWR.includes(x.r));inf.ciclos=items.length-keep.length;
+  /* 2) datos vivos: si el plan activo es antiguo, TODO lo vivo (res/acts/g/bien) es de ese plan */
+  if(legacyActive||!st.r){for(const m of ['res','acts','g']){inf['pasos'+(m=='res'?'Res':m=='acts'?'Acts':'G')]=Object.keys(st[m]||{}).length;st[m]={}}}
+  else for(const m of ['res','acts','g']){if(!isO(st[m]))continue;for(const k of Object.keys(st[m]))if(LEGP.test(k)){delete st[m][k];inf['pasos'+(m=='res'?'Res':m=='acts'?'Acts':'G')]++}}
+  if(isO(st.bien)){inf.bien=Object.keys(st.bien).length;delete st.bien}   // S.bien = «Bienestar y consumo personal» (antiguo); el nuevo vive en S.p3.bien
+  /* 3) historial de «Repetir ciclo» antiguo */
+  if(Array.isArray(st.cycles)){inf.cycles=st.cycles.length;st.cycles=[]}
+  /* 4) plan activo */
+  if(legacyActive){
+    const nw=keep.slice().sort((a,b)=>(b.at||0)-(a.at||0))[0];
+    if(nw&&nw.data){ // había un plan nuevo guardado: pasa a ser el activo con sus datos
+      st.res=clone(nw.data.res||{});st.acts=clone(nw.data.acts||{});st.g=clone(nw.data.g||{});if(isO(nw.data.bien)&&Object.keys(nw.data.bien).length)st.bien=clone(nw.data.bien);
+      delete nw.data;nw.status='activo';nw.end='';st.cy.active=nw.id;st.cyid=nw.id;st.r=nw.r;st.team=!!nw.team;inf.activo=nw.r}
+    else{delete st.cy;delete st.cyid;st.r=null;st.team=false;if(['reporte','app'].includes(st.stage))st.stage='diag';st.tab='inicio'}
+  }
+  if(st.cy){st.cy.items=keep;if(!keep.length){delete st.cy;delete st.cyid}else if(!keep.some(x=>x.id===st.cy.active)){const a=keep[0];st.cy.active=a.id;st.cyid=a.id}}
+  if(!st.r&&st.cy&&!st.cy.items.length){delete st.cy;delete st.cyid}
+  if(!st.r&&['reporte','app'].includes(st.stage))st.stage='diag';
+  /* 5) objetivo del diagnóstico: solo se conserva si coincide con el plan nuevo activo */
+  if(st.d&&st.d.goal!=null&&st.d.goal!==''){const ok=st.r&&NEWR[+st.d.goal]===st.r;if(!ok){delete st.d.goal;inf.dGoal=true}}
+  st.open=null;st.v=null;st.tmp={};
+  return{st,inf}}
+function globales(st){const o={};GLOBAL.filter(k=>k!='tab'&&k!='stage').forEach(k=>{o[k]=st[k]===undefined?null:st[k]});return canon(o)}
+function run(){
+  let fl=null;try{fl=localStorage.getItem(FLAG)}catch(e){}
+  if(fl)return{skip:'ya limpio o recuperado'};
+  let raw=null;try{raw=localStorage.getItem(KEY)}catch(e){}
+  if(!raw){try{localStorage.setItem(FLAG,JSON.stringify({at:Date.now(),nada:true}))}catch(e){}return{skip:'sin datos'}}
+  let st;try{st=JSON.parse(raw)}catch(e){return{err:'estado ilegible; no se tocó nada'}}
+  if(!isO(st)||!hasLegacy(st)){try{localStorage.setItem(FLAG,JSON.stringify({at:Date.now(),nada:true}))}catch(e){}return{skip:'sin planes antiguos'}}
+  /* copia técnica recuperable (si existe una previa, se conserva como _prev) */
+  try{const old=localStorage.getItem(COPY);if(old)localStorage.setItem(PREV,old);
+    localStorage.setItem(COPY,JSON.stringify({at:Date.now(),motivo:'limpieza-planes-antiguos',raw}));
+    if(JSON.parse(localStorage.getItem(COPY)).raw!==raw)throw 0}
+  catch(e){try{if(!localStorage.getItem(COPY))localStorage.removeItem(COPY)}catch(_){}return{err:'No pude guardar la copia técnica (poco espacio). No se limpió nada.'}}
+  const{st:ns,inf}=limpiar(st);
+  if(globales(ns)!==globales(st))return{err:'La limpieza habría tocado datos globales. Se canceló sin cambios.'};
+  try{localStorage.setItem(KEY,JSON.stringify(ns));
+    const back=JSON.parse(localStorage.getItem(KEY));
+    if(canon(back)!==canon(ns))throw 0;
+    localStorage.setItem(FLAG,JSON.stringify({at:Date.now(),informe:inf}))}
+  catch(e){try{localStorage.setItem(KEY,raw)}catch(_){}return{err:'No se pudo verificar lo guardado. Se restauró la versión anterior.'}}
+  return{ok:true,inf}}
+return{run,limpiar,hasLegacy,globales,KEY,COPY,FLAG}})();
+window.LIMP3=LIMP3;
+
+(function(){try{
+ var q=location.search,iso=/[?&]aislado=1(&|$)/.test(q),go=function(){location.replace(location.pathname+'?aislado=1')};
+ if(!iso){window.__limp={skip:'no aislado'};return}
+ if(/[?&]recuperar=1(&|$)/.test(q)){ // fuera del flujo normal: restaura la copia técnica previa a la limpieza
+  var c=JSON.parse(localStorage.getItem('p30_prelimpieza')||'null');
+  if(c&&c.raw){localStorage.setItem('p30',c.raw);localStorage.setItem('p30_limpio3',JSON.stringify({at:Date.now(),recuperado:true}));}
+  go();return}
+ if(/[?&]limpiar=1(&|$)/.test(q)){localStorage.removeItem('p30_limpio3');go();return}
+ window.__lclHas=function(s){return LIMP3.hasLegacy(s)};window.__lcl=function(s){return LIMP3.limpiar(s).st};
+ window.__limp=LIMP3.run();
+}catch(e){window.__limp={err:'La limpieza no pudo ejecutarse: '+e.message}}})();
+</script>
+<script>
 /* ===== CONTENIDO CENTRALIZADO: edita aquí planes, pasos, guiones, objeciones y contenido oficial ===== */
 const st=(t,what,why,how,ex,act,sc)=>({t,what,why,how,ex,act,sc});
 const L10={type:'list',n:10,q:'Escribe 10 personas con quienes podrías hablar:'};
@@ -117,7 +202,7 @@ scripts:[
 ['Delegación','Persona lista para más responsabilidad','Soltar la tarea sin revisión','“Esta vez tú inicias las conversaciones. El viernes revisamos cómo te fue.”','“Me da nervios.”','Practiquen el primer mensaje juntos.'],
 ['Reconocimiento','Persona que avanzó','Elogios exagerados','“Muy bien, Laura. Vi que esta semana sí hiciste tus seguimientos. Esa constancia es lo que queremos repetir.”','“Gracias.”','Acuerda la siguiente acción.']],
 chat:[['Hola Ana, ¿cómo has estado? Vi que estás entrenando bastante.',1],['¡Hola! Sí, voy diario 😄',0],['¡Qué bien! ¿Qué buscas ahorita: energía, hábitos o mantenerte?',1],['Más energía en las tardes.',0],['Gracias por contarme. Puedo explicarte una opción con información oficial. ¿Te late?',1],['Está caro, ¿no?',0],['Entiendo. Revisemos qué contiene y cuánto te dura, y tú decides.',1],['Está bien, lo pienso.',0],['Claro. ¿Te escribo el jueves para ver tus dudas?',1]],
-diag:[['Vender','Construir equipo','Liderar el equipo que ya tengo','Vender y construir equipo','Vender y liderar mi equipo','Bienestar y consumo personal'],['Iniciar conversaciones','Explicar productos','Explicar oportunidad','Dar seguimiento','Cerrar ventas','Trabajar con otras personas','Organizarse']],
+diag:[['Bienestar — Usa, conoce y comparte','Ventas — Presenta, vende y fideliza','Liderazgo y Equipo — Desarrolla, acompaña y lidera'],['Iniciar conversaciones','Explicar productos','Explicar oportunidad','Dar seguimiento','Cerrar ventas','Trabajar con otras personas','Organizarse']],
 steps0:['Inicio'],
 pend:['Iniciar conversaciones','Encontrar personas','Presentar productos','Presentar oportunidad','Responder objeciones','Dar seguimiento','Cerrar','Trabajar con el equipo','Organizarse','Ser constante'],
 estados:['Por contactar','Conversación iniciada','Interesado','Presentación','Seguimiento','Cliente','Equipo','No interesado','Más adelante']};
@@ -143,9 +228,7 @@ const actOk=i=>{const s=steps()[i],a=S.acts[key(i)]||{};return s.act.type=='list
 const bar=p=>`<div class="bar"><i${p>=100?' class="done"':''} style="width:${p}%"></i></div>`;
 const copy=t=>copyT(t).then(ok=>toast(ok?'Copiado. Pégalo en WhatsApp.':'No se pudo copiar.'));
 const today=()=>new Date().toISOString().slice(0,10);
-function assign(){const g=S.d.goal;S.team=S.d.team=='Sí';
-S.r=g==0?'venta':g==1?'c4x30':g==2?(S.team?'l4x30':'c4x30'):g==3||g==4?'mixto':'bienestar';
-if(g==3)S.team=false;if(g==4)S.team=true;S.stage='reporte';try{window.CY&&CY.onAssign()}catch(e){}save()}
+function assign(){const g=+S.d.goal;S.r=['pbienestar','pventas','pliderazgo'][g]||'pbienestar';S.team=S.r=='pliderazgo';S.stage='reporte';try{window.CY&&CY.onAssign()}catch(e){}save()}
 function render(){if(window.CS&&CS.gate())return;const A=$('#app'),N=$('#nav');N.style.display='none';
 if(window.__bkv&&S.v&&['perfil','diag','reporte'].includes(S.stage))return A.innerHTML=S.v();
 if(S.stage=='perfil')return A.innerHTML=perfil();
@@ -167,8 +250,8 @@ return`<div class="c"><div class="m">TU RUTA</div><b>${E(rname())}</b><div style
 <div class="c"><b>Personas en seguimiento:</b> ${S.people.filter(x=>x.estado=='Seguimiento').length}<br><b>Seguimientos para hoy o atrasados:</b> ${seg.length}${seg.slice(0,3).map(x=>`<div class="m">• ${E(x.nombre)}: ${E(x.sig||'dar seguimiento')}</div>`).join('')}<br><b>Próxima revisión 1 a 1:</b> ${E((S.rev.filter(r=>r.prox).map(r=>r.prox).sort()[0])||'sin fecha')}</div>
 ${incBanner()}<button class="b s" data-a="obj">Tengo una objeción</button><button class="b s" data-a="apoyo">Necesito apoyo</button>`}
 function rutaV(){const a=steps(),c=cur();if(S.open!=null&&S.open<a.length)return paso(S.open);
-return`<h1>Mi ruta</h1><div class="c"><b>${E(rname())}</b>${window.CY?CY.chip():''}${bar(pct())}</div>${window.CY?CY.bar():''}${a.map((s,i)=>`<div class="c st" style="${i==c?'border-color:var(--ac)':''}"><span>${done(i)?'✓':i==c?'●':'○'}</span><div style="flex:1"><b>${E(s.t)}</b>${s.area?` <span class="tag">${s.area}</span>`:''}<br><span class="m">${stLabel(i,c)}</span></div><button class="b sm s" data-a="abrir" data-v="${i}">${done(i)?'Ver':'Abrir'}</button></div>`).join('')}${c>=a.length?resumen():''}`}
-function resumen(){const r={venta:'Conversar → descubrir → recomendar → resolver dudas → decisión → seguimiento → cliente',c4x30:'Lista → conversación → invitación → presentación → seguimiento → inicio → acompañamiento → duplicación',l4x30:'Mapear → diagnosticar → acordar → acompañar → delegar → revisar → reconocer → formar líder',mixto:'Ventas + equipo: el trabajo continúa en cada ciclo',bienestar:'Objetivo → hábitos → consumo → seguimiento'};
+return`<h1>Mi ruta</h1><div class="c"><b>${E(rname())}</b>${window.CY?CY.chip():''}${bar(pct())}</div>${window.CY?CY.bar():''}${a.map((s,i)=>`<div class="c st" style="${i==c?'border-color:var(--ac)':''}"><span>${done(i)?'✓':i==c?'●':'○'}</span><div style="flex:1"><b>${E(s.t)}</b>${s.area?` <span class="tag">${s.area}</span>`:''}${s.gold?` <span class="tag">${s.gold}</span>`:''}<br><span class="m">${stLabel(i,c)}</span></div><button class="b sm s" data-a="abrir" data-v="${i}">${done(i)?'Ver':'Abrir'}</button></div>`).join('')}${c>=a.length?resumen():''}`}
+function resumen(){const r={venta:'Conversar → descubrir → recomendar → resolver dudas → decisión → seguimiento → cliente',c4x30:'Lista → conversación → invitación → presentación → seguimiento → inicio → acompañamiento → duplicación',l4x30:'Mapear → diagnosticar → acordar → acompañar → delegar → revisar → reconocer → formar líder',mixto:'Ventas + equipo: el trabajo continúa en cada ciclo',bienestar:'Objetivo → hábitos → consumo → seguimiento',pbienestar:'Conoce tu situación → necesidades → objetivo → rutina → registro diario → revisión y experiencia',pventas:'Lista → conversación → necesidad → presentación → decisión → cliente → recompra → fidelización',pliderazgo:'Elegir → acordar → enseñar → revisar → organizar equipo → formar líderes → reunir y reconocer → evaluar'};
 return`<div class="c"><h3>Ciclo aprendido</h3>${r[S.r]}<button class="b g" data-a="repetir">Repetir ciclo</button></div>`}
 function paso(i){const a=steps(),s=a[i],k=key(i),ac=S.acts[k]||{},d=done(i),n=a.length;
 let act='';if(s.act.type=='list'){const l=ac.list||[];const m=Math.max(s.act.n,l.length);act=`<p><b>${E(s.act.q)}</b></p>`+Array.from({length:m},(_,j)=>`<input data-li="${j}" placeholder="${j+1}." value="${E(l[j])}">`).join('')+`<button class="b sm s" data-a="mas">+ Agregar más personas</button><button class="b sm s" data-a="aperson">Pasar a Personas</button>`}
@@ -190,7 +273,7 @@ function objV(){const o=S.tmp.o;return`<button class="b t sm" data-a="cerrar">�
 function chatV(){return`<button class="b t sm" data-a="cerrar">← Volver</button><h1>Conversación completa</h1><div class="c">${C.chat.map(m=>`<div class="q ${m[1]?'me':''}">${E(m[0])}</div>`).join('')}</div><p class="m">Inicio → pregunta → descubrimiento → necesidad → recomendación → objeción → respuesta → decisión → seguimiento.</p>`}
 function progreso(){const a=steps();const lead=S.role=='líder';
 return`<h1>Progreso</h1><div class="c"><b>${E(rname())}</b>${bar(pct())}${a.map((s,i)=>`<div>${done(i)?'✓':i==cur()?'●':'○'} ${E(s.t)}</div>`).join('')}</div>
-<button class="b s" data-a="inc">Mis incentivos</button><button class="b s" data-a="mandar">Mandar mi avance</button><button class="b s" data-a="eval">Autoevaluación semanal</button><button class="b s" data-a="rev">Nueva revisión 1 a 1</button><button class="b s" data-a="chk">Formar otro líder</button><button class="b s" data-a="rec">Reconoce un avance</button><button class="b s" data-a="bien">Bienestar</button><button class="b s" data-a="hist">Historial</button>
+<button class="b s" data-a="inc">Mis incentivos</button><button class="b s" data-a="mandar">Mandar mi avance</button><button class="b s" data-a="eval">Autoevaluación semanal</button><button class="b s" data-a="rev">Nueva revisión 1 a 1</button><button class="b s" data-a="chk">Formar otro líder</button><button class="b s" data-a="rec">Reconoce un avance</button><button class="b s" data-a="hist">Historial</button>
 <button class="b s" data-a="reset">Reiniciar todo</button>`}
 function panel(){const T=S.people.filter(x=>(x.tipo||'').includes('iembro')||x.tipo=='Cliente y miembro');return`<h2>Panel del líder</h2>${T.map(x=>`<div class="c"><b>${E(x.nombre)}</b><br>Ruta: ${E(x.ruta||'—')}<br>Progreso: ${E(x.prog||0)} %${bar(+x.prog||0)}Paso: ${E(x.paso||'—')}<br>Acción acordada: ${E(x.accion||'—')}<br>Revisión: ${E(x.fecha||'—')} · Última actividad: ${E(x.ult||'—')}</div>`).join('')||'<p class="m">Registra a tu equipo en Personas (tipo Miembro del equipo). Cuando se conecte Supabase cada persona verá y actualizará esto desde su teléfono.</p>'}`}
 const evF=[['conv','Conversaciones iniciadas'],['seg','Seguimientos realizados'],['pres','Presentaciones'],['ven','Ventas'],['nue','Personas nuevas agregadas'],['pen','Tareas pendientes']],evL=[['u1','Reuniones 1 a 1'],['del','Acciones delegadas'],['rev','Acciones revisadas'],['avan','Personas que avanzaron'],['lid','Personas formadas como líderes']];
@@ -291,7 +374,7 @@ tab(e,v){S.tab=v;S.v=null;S.open=null;S.tmp={};},cerrar(){S.v=null;S.open=null;S
 perfil(){const p=S.p||{};if(S.tmp.psaving)return;if(!(p.n||'').trim()){S.tmp.perr={code:'PERFIL_NOMBRE',msg:'Escribe tu nombre para continuar.'};return}
 S.tmp.perr=null;S.tmp.psaving=true;
 return CS.saveNow().then(r=>{S.tmp.psaving=false;S.stage='diag';save();CS.saveNow().catch(()=>{});if(r&&r.offline)toast('Perfil guardado en este dispositivo. Se sincronizará al reconectar.');render()}).catch(e=>{S.tmp.psaving=false;S.tmp.perr={code:String((e&&e.code)||(e&&e.message)||'ERROR_DESCONOCIDO'),msg:'No se pudo guardar tu perfil en la nube. Tus datos siguen aquí; revisa el código e inténtalo de nuevo.'};save();render()})},
-diag(){if(S.d.goal==null||S.d.goal==='')return alert('Elige tu objetivo.');assign();},
+diag(){if(S.d.goal==null||S.d.goal===''||![0,1,2].includes(+S.d.goal))return toast('Elige tu objetivo.');assign();},
 empezar(){S.stage='app';S.tab='inicio';},
 abrir(e,v){S.open=+v;},mas(){const k=key(S.open);(S.acts[k]=S.acts[k]||{}).list=(S.acts[k].list||[]).concat(['']);const n=steps()[S.open].act.n;while(S.acts[k].list.length<n+1)S.acts[k].list.push('');},
 aperson(){const k=key(S.open),l=(S.acts[k]||{}).list||[];let n=0;l.filter(x=>x&&x.trim()).forEach(x=>{if(!S.people.some(p=>p.nombre==x)){S.people.push({nombre:x,tipo:'Prospecto',interes:'Ambos',estado:'Por contactar',obj:'Ventas',act:'Activo'});n++}});alert(n+' personas agregadas a Personas.');},
@@ -572,7 +655,7 @@ return`<div class="hd"><div class="hi">Mi progreso</div><div class="m">${E(rname
 <details><summary>Personas<span class="m">${pe.length}</span></summary><div class="li">Por contactar<b style="margin-left:auto">${cnt('Por contactar')}</b></div><div class="li">En seguimiento<b style="margin-left:auto">${cnt('Seguimiento')}</b></div><div class="li">Clientes<b style="margin-left:auto">${cnt('Cliente')}</b></div><button class="b sm s" data-a="tab" data-v="personas">Ver personas</button></details>
 <details><summary>Juntas<span class="m">${wk().att} de 3</span></summary><div class="li" style="flex-wrap:wrap">${wkChips()}</div><button class="b sm s" data-a="juntas">Ver juntas</button><div class="m" style="margin-top:8px">Revisiones 1 a 1</div>${S.rev.slice(-3).reverse().map(r=>`<div class="li"><span style="flex:1">${E(r.p)}</span><span class="m">${E(r.f)}</span></div>`).join('')||'<div class="m">Aún sin revisiones.</div>'}<button class="b sm s" data-a="rev">Nueva revisión 1 a 1</button></details>
 <details><summary>Incentivos<span class="m">${ids.length}</span></summary>${ids.map(id=>`<div class="li" data-a="incd" data-v="${id}" style="cursor:pointer"><span style="flex:1">${C.inc[id].n}</span><b>${pctI(ENG[id](C.inc[id]))} %</b>${ic('chev','sm')}</div>`).join('')}<button class="b sm s" data-a="inc">Mis incentivos</button></details>
-<details><summary>Herramientas</summary><button class="b t" data-a="eval">Autoevaluación semanal</button><button class="b t" data-a="chk">Formar otro líder</button><button class="b t" data-a="rec">Reconocer un avance</button><button class="b t" data-a="bien">Bienestar</button><button class="b t" data-a="hist">Historial</button></details>
+<details><summary>Herramientas</summary><button class="b t" data-a="eval">Autoevaluación semanal</button><button class="b t" data-a="chk">Formar otro líder</button><button class="b t" data-a="rec">Reconocer un avance</button><button class="b t" data-a="hist">Historial</button></details>
 <button class="b" data-a="mandar">Mandar avance a mi líder</button><div class="c"><div class="m">Apariencia</div><div class="row2"><button class="ch ${curTheme()=='light'?'on':''}" aria-pressed="${curTheme()=='light'}" data-a="theme" data-v="light">☀️ Claro</button><button class="ch ${curTheme()=='dark'?'on':''}" aria-pressed="${curTheme()=='dark'}" data-a="theme" data-v="dark">🌙 Oscuro</button></div></div><div class="c"><div class="row"><b>Respaldo de mis datos</b></div><div class="m">Guarda un archivo con toda tu información (personas, avance, incentivos, juntas, liderazgo) o restáuralo.</div><button class="b" data-a="bkexp">Exportar respaldo</button><button class="b s" data-a="bkimp">Restaurar respaldo</button></div><button class="b t" style="color:var(--ert)" data-a="reset">Reiniciar todo</button>`}
 function incV(){const ids=actIds();return`<button class="b t sm" data-a="cerrar">← Volver</button><div class="hd"><div class="hi">Mis incentivos</div><div class="m">Opcionales. Corren junto a tu plan.</div></div>${Object.entries(C.inc).map(([id,c])=>{if(S.inc.act[id]){const r=ENG[id](c),mt=r.rows.filter(x=>x.u!='b'&&!x.none).slice(0,2);return`<div class="c"><div class="row"><b>${c.n}</b><b>${pctI(r)} %</b></div>${bar(pctI(r))}${mt.map(x=>`<div class="m">${fm(x.val)} / ${fm(x.min)} · ${E(x.label)}</div>`).join('')}<div class="row2"><button class="b sm" style="margin:0" data-a="incd" data-v="${id}">Ver detalle</button><button class="b t sm" style="margin:0" data-a="deact" data-v="${id}">Desactivar</button></div></div>`}
 return`<div class="c"><div class="row"><b>${c.n}</b><span class="tag">${c.premio}</span></div><div class="m">${c.desc}</div><div class="row2"><button class="b sm s" style="margin:0" data-a="act" data-v="${id}">Activar seguimiento</button><button class="b t sm" style="margin:0" data-a="bases" data-v="${id}">Bases</button></div></div>`}).join('')}${ids.length?'<button class="b" data-a="upd">Actualizar mi negocio</button>':''}<details><summary>Historial</summary>${S.inc.hist.slice(-25).reverse().map(h=>`<div class="m">${h.f} · ${E(h.t)}</div>`).join('')||'<div class="m">Sin cambios registrados.</div>'}</details>`}
@@ -782,7 +865,7 @@ function ldCardL(L){if(!(L.leadership||L.sales||L.stepStates))return'';const l=L
 const topN=m=>Object.entries(m).sort((x,y)=>y[1]-x[1]).slice(0,3).map(x=>x[0]);
 function resumen(){const a=steps(),st=stats(),lr=ldReport(),res=a.map((s,i)=>({s,r:S.res[key(i)]})).filter(x=>x.r),apr={},mej={};S.ld.rev.forEach(r=>{(r.aprendio||[]).forEach(x=>apr[x]=(apr[x]||0)+1);(r.mejorar||[]).forEach(x=>mej[x]=(mej[x]||0)+1)});
 const pd=dueP().map(p=>p.nombre+': '+(p.sig||'seguimiento')).concat(ldDue(false).map(x=>x.t)).slice(0,8),
-r={venta:'Conversar → descubrir → recomendar → resolver dudas → decisión → seguimiento → cliente',c4x30:'Lista → conversación → invitación → presentación → seguimiento → inicio → acompañamiento → duplicación',l4x30:'Mapear → diagnosticar → acordar → acompañar → delegar → revisar → reconocer → formar líder',mixto:'Ventas + equipo: conversar, recomendar, dar seguimiento; mapear, acordar, acompañar, delegar, reconocer y formar',bienestar:'Objetivo → hábitos → consumo → seguimiento'},
+r={venta:'Conversar → descubrir → recomendar → resolver dudas → decisión → seguimiento → cliente',c4x30:'Lista → conversación → invitación → presentación → seguimiento → inicio → acompañamiento → duplicación',l4x30:'Mapear → diagnosticar → acordar → acompañar → delegar → revisar → reconocer → formar líder',mixto:'Ventas + equipo: conversar, recomendar, dar seguimiento; mapear, acordar, acompañar, delegar, reconocer y formar',bienestar:'Objetivo → hábitos → consumo → seguimiento',pbienestar:'Conoce tu situación → necesidades → objetivo → rutina → registro diario → revisión y experiencia',pventas:'Lista → conversación → necesidad → presentación → decisión → cliente → recompra → fidelización',pliderazgo:'Elegir → acordar → enseñar → revisar → organizar equipo → formar líderes → reunir y reconocer → evaluar'},
 rs=[['Conversaciones con respuesta',st.conv],['Personas con interés',st.int],['Clientes',st.cli],['Ventas registradas',st.ventas],['Objeciones atendidas',st.ob],['Atenciones de postventa',st.posv],['Recomendaciones recibidas',st.refs],['Acuerdos cumplidos',lr.agreements.done],['Delegaciones completadas',lr.delegations.completed],['Revisiones 1 a 1',lr.reviews1a1],['Reconocimientos',lr.recognitions],['Habilidades demostradas en formación',lr.formation.skillsDemonstrated]].filter(x=>x[1]>0),
 ap=[['Objeciones más frecuentes',topN(st.obTop)],['Lo que aprendieron tus integrantes',topN(apr)],['Lo que deben mejorar',topN(mej)]].filter(x=>x[1].length);
 return`<div class="c"><h3>Resumen de tu ruta</h3><div class="m">${E(rname())} · ${res.length} de ${a.length} actividades completadas</div>
@@ -821,7 +904,7 @@ const slug=n=>String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A
 const fdt=t=>{try{return new Date(t).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return String(t||'')}};
 const sOf=st=>{try{return st.r=='mixto'?[...C.routes.venta.steps,...C.routes[st.team?'l4x30':'c4x30'].steps]:((C.routes[st.r]||{}).steps||[])}catch(e){return[]}};
 function counts(st){const a=sOf(st),ld=isO(st.ld)?st.ld:{},tm=(st.L&&isO(st.L.team))?st.L.team:{};let ldn=0;Object.keys(ld).forEach(k=>{ldn+=L(ld[k])});
-return{nombre:(st.p&&st.p.n)||'',ruta:!st.r?'':st.r=='mixto'?'Mixto 30':((C.routes[st.r]||{}).name||String(st.r)),pasos:a.filter((_,k)=>st.res&&st.res[st.r+k]).length,total:a.length,personas:L(st.people),inscritos:L(st.ins),incentivos:TT(st.inc&&st.inc.act),juntas:TT(st.jt&&st.jt.att),rev:L(st.rev),lider:ldn,miembros:K(tm),reportes:Object.values(tm).reduce((n,m)=>n+L(m&&m.reports),0),ciclos:L(st.cycles),planes:(typeof CY!='undefined'?CY.nPlans(st):0)}}
+return{nombre:(st.p&&st.p.n)||'',ruta:!st.r?'':st.r=='mixto'?'Mixto 30':((C.routes[st.r]||{}).name||String(st.r)),pasos:a.filter((_,k)=>st.res&&st.res[st.r+k]).length,total:a.length,personas:L(st.people),inscritos:L(st.ins),incentivos:TT(st.inc&&st.inc.act),juntas:TT(st.jt&&st.jt.att),rev:L(st.rev),lider:ldn,miembros:K(tm),reportes:Object.values(tm).reduce((n,m)=>n+L(m&&m.reports),0),ciclos:L(st.cycles),planes:(typeof CY!='undefined'?CY.nPlans(st):0),p3:(isO(st.p3)?Object.keys(st.p3).reduce((n,k)=>n+(Array.isArray(st.p3[k])?st.p3[k].length:0),0):0)}}
 /* ----- registros por sección (misma partición que usa la sincronización con la nube) ----- */
 const SECS=()=>{try{return CS.SEC||{}}catch(e){return{}}};
 const SL={profile:'Perfil',plan:'Ruta y equipo',activities:'Actividades y avance',people:'Personas e inscritos',meetings:'Juntas y revisiones',incentives:'Incentivos',progress:'Eventos y ciclos',plans:'Planes y ciclos (historial de planes)',settings:'Ajustes',team:'Liderazgo y equipo'};
@@ -891,7 +974,7 @@ function snap(){const o={};Object.keys(S).forEach(k=>{if(TRANS.includes(k)||DEV.
 function scrub(x,c){if(Array.isArray(x))return x.map(v=>scrub(v,c));if(isO(x)){const r={};for(const k of Object.keys(x)){if(BADK.test(k)){c.proto++;continue}if(SECK.test(k)){c.secret++;continue}r[k]=scrub(x[k],c)}return r}if(typeof x=='string'&&SECV.test(x)){c.secret++;return''}return x}
 function check(st){const er=[],wr=[];if(!isO(st))return{er:['El contenido del respaldo no tiene el formato esperado.'],wr};
 ['people','rev','ev','cycles','ins','fbIn'].forEach(k=>{if(st[k]!==undefined&&!Array.isArray(st[k]))er.push('El campo «'+k+'» no tiene el formato esperado.')});
-['p','d','acts','res','g','sup','inc','jt','L','ld'].forEach(k=>{if(st[k]!==undefined&&st[k]!==null&&!isO(st[k]))er.push('El campo «'+k+'» no tiene el formato esperado.')});
+['p','d','acts','res','g','sup','inc','jt','L','ld','p3'].forEach(k=>{if(st[k]!==undefined&&st[k]!==null&&!isO(st[k]))er.push('El campo «'+k+'» no tiene el formato esperado.')});
 if(st.cy!==undefined&&st.cy!==null){if(!isO(st.cy)||!Array.isArray(st.cy.items))er.push('El historial de planes no tiene el formato esperado.');else if(st.cy.items.some(x=>!isO(x)||typeof x.id!='string'||!x.id||(x.data!==undefined&&!isO(x.data))))er.push('Hay planes con datos incompletos.')}
 if(Array.isArray(st.people)&&st.people.some(x=>!isO(x)||typeof x.nombre!='string'))er.push('Hay personas con datos incompletos.');
 if(Array.isArray(st.ins)&&st.ins.some(x=>!isO(x)))er.push('Hay inscritos con datos incompletos.');
@@ -921,6 +1004,7 @@ if(j.backupType=='fullBackup'){
 else if(Array.isArray(j.people)||isO(j.p)||isO(j.res)||isO(j.acts)||j.stage){legacy=true;b={backupVersion:0,exportedAt:'',member:{}};state=j;wr.push('Es un archivo sin cabecera (datos de una versión anterior). Se validó solo su estructura.')}
 else return E2('No pude leer este archivo. Verifica que sea un respaldo generado por esta aplicación.');
 const c={secret:0,proto:0};state=scrub(state,c);
+if(window.__lclHas&&!window.__noLcl&&window.__lclHas(state)){state=window.__lcl(state);wr.push('Este respaldo trae planes de la versión anterior (ciclos, respuestas y avances). En esta versión de prueba no se restauran: se conservan tus personas, compras, seguimientos, equipo, notas e incentivos, y los tres planes nuevos empiezan vacíos.')}
 if(c.secret)wr.push('Se omitieron '+c.secret+' valores que parecían credenciales.');
 const v=check(state);if(v.er.length)return E2(v.er[0]);
 return{b,state,legacy,wr:wr.concat(v.wr),theme:(isO(b.data)&&['light','dark'].includes(b.data.theme))?b.data.theme:null,src:'archivo'}}
@@ -936,7 +1020,7 @@ function copies(){const o=[];try{for(let i=0;i<localStorage.length;i++){const k=
  else{let j;try{j=JSON.parse(v)}catch(e){continue}raw=j&&j.raw;at=+j.at||Date.parse(j.at)||0;lab=k=='p30_preupdate'?'Datos originales al abrir esta versión por primera vez':k=='p30_precycles'?'Antes de activar los ciclos de plan':k=='p30_prereset'?'Antes de «Reiniciar todo»':'Antes de restaurar un respaldo'}
  let st;try{st=JSON.parse(raw)}catch(e){continue}if(!isO(st))continue;o.push({k,at,lab,c:counts(st)})}}catch(e){}return o.sort((a,b)=>b.at-a.at)}
 function loadCopy(k){if(!CK.test(k))return E2('No encontré esa copia.');let v,raw;try{v=localStorage.getItem(k)}catch(e){}
-if(!v)return E2('No encontré esa copia.');try{raw=/^p30_backup_/.test(k)?v:JSON.parse(v).raw;const st=JSON.parse(raw);if(!isO(st))throw 0;const c={secret:0,proto:0},s2=scrub(st,c),ch=check(s2);if(ch.er.length)return E2(ch.er[0]);return{mode:'replace',b:{backupVersion:0,exportedAt:'',member:{}},state:s2,legacy:true,wr:['Es una copia guardada automáticamente en este teléfono.'].concat(ch.wr),theme:null,src:'copia',key:k}}catch(e){return E2('No pude leer esa copia.')}}
+if(!v)return E2('No encontré esa copia.');try{raw=/^p30_backup_/.test(k)?v:JSON.parse(v).raw;const st=JSON.parse(raw);if(!isO(st))throw 0;const c={secret:0,proto:0},s2=(x=>window.__lclHas&&window.__lclHas(x)?window.__lcl(x):x)(scrub(st,c)),ch=check(s2);if(ch.er.length)return E2(ch.er[0]);return{mode:'replace',b:{backupVersion:0,exportedAt:'',member:{}},state:s2,legacy:true,wr:['Es una copia guardada automáticamente en este teléfono.'].concat(window.__lclHas&&window.__lclHas(scrub(st,{secret:0,proto:0}))?['Esta copia trae planes de la versión anterior (ciclos, respuestas y avances). En esta versión de prueba no se restauran: se conservan tus personas, compras, seguimientos, equipo, notas e incentivos, y los tres planes nuevos empiezan vacíos.']:[]).concat(ch.wr),theme:null,src:'copia',key:k}}catch(e){return E2('No pude leer esa copia.')}}
 /* restaurar = reemplazar, solo tras confirmar; el estado actual se guarda antes */
 function apply(p){
 let prev=null;try{prev=localStorage.getItem('p30')}catch(e){}
@@ -967,7 +1051,7 @@ for(const k of Object.keys(SECS())){const nl=secN(loc,k),nb=secN(state,k);let nc
  if(ok&&nb<Math.max(nl,nc||0)){ok=false;es='Faltan registros'}
  if(!ok)status='incomplete';rows.push({k,nl,nc,nb,es,ok})}
 const mkVer=()=>{const v={status,checkedAt:new Date().toISOString(),nubeLeida:!!rs,secciones:{}};if(reason)v.motivo=reason;rows.forEach(x=>{v.secciones[x.k]={telefono:x.nl,nube:x.nc,respaldo:x.nb,estado:x.es}});return v};
-let b=build(state,mkVer());const pr=parse(b.txt);
+let b=build(state,mkVer());window.__noLcl=1;let pr;try{pr=parse(b.txt)}finally{window.__noLcl=0};
 if(pr.err){status='incomplete';warns.push('La comprobación del archivo falló: '+pr.err)}
 else if(rows.some(x=>secN(pr.state,x.k)!==x.nb||false)||canon(counts(pr.state))!==canon(counts(state))){status='incomplete';warns.push('Al volver a leer el archivo no coinciden los registros de alguna sección.')}
 b=build(state,mkVer());
@@ -1023,7 +1107,7 @@ ${cp.map(x=>`<div class="c"><div class="row" style="align-items:flex-start"><div
 function head(p){const b=counts(p.state),m=p.b||{};return`<div class="c"><div class="row"><b>${E(b.nombre||'Sin nombre')}</b><span class="tag">${E(b.ruta||'Sin ruta')}</span></div><div class="m">${p.src=='copia'?'Copia guardada en este teléfono':m.exportedAt?'Respaldo generado el '+E(fdt(m.exportedAt)):'Archivo sin fecha'}</div>
 <div class="li" style="gap:6px;margin-top:6px"><span class="ok">${ic('check','sm')}</span>Formato y estructura válidos</div>${p.src=='archivo'&&!p.legacy&&p.b.checksum?`<div class="li" style="gap:6px"><span class="ok">${ic('check','sm')}</span>Integridad verificada</div>`:''}${p.cloud=='ok'?`<div class="li" style="gap:6px"><span class="ok">${ic('check','sm')}</span>Comparado con lo que hay en tu nube</div>`:''}</div>`}
 function mergeV(p){const b=counts(p.state),c=counts(p.base),m=counts(p.merged),w=p.wr.slice();
-const keys=[['Actividades del plan activo','pasos'],['Planes y ciclos','planes'],['Personas','personas'],['Inscritos (incentivos)','inscritos'],['Incentivos activos','incentivos'],['Asistencias a juntas','juntas'],['Revisiones 1 a 1','rev'],['Registros de liderazgo','lider'],['Miembros de tu equipo','miembros'],['Reportes recibidos','reportes'],['Ciclos completados','ciclos']];
+const keys=[['Actividades del plan activo','pasos'],['Planes y ciclos','planes'],['Personas','personas'],['Compras, seguimientos y bienestar','p3'],['Inscritos (incentivos)','inscritos'],['Incentivos activos','incentivos'],['Asistencias a juntas','juntas'],['Revisiones 1 a 1','rev'],['Registros de liderazgo','lider'],['Miembros de tu equipo','miembros'],['Reportes recibidos','reportes'],['Ciclos completados','ciclos']];
 const rows=keys.map(([l,k],i)=>[l,b[k],c[k],m[k]-c[k],i]).filter(r=>r[4]<3||r[1]||r[2]||r[3]);const vis=rows.reduce((n,r)=>n+Math.max(0,r[3]),0),otros=Math.max(0,p.total-vis);
 if(p.state.uid&&p.base.uid&&p.state.uid!==p.base.uid)w.push('Este respaldo es de otra identidad de miembro. Se conserva la tuya; los registros se agregan a tus datos.');
 w.push(p.cloud=='ok'?'Lo que se agregue se enviará también a tu nube con la sincronización normal. Solo se agregan registros: no se borra ni se reemplaza nada allí.':'No hay sesión de nube activa: se combinará solo en este teléfono.');
@@ -1041,7 +1125,7 @@ function replaceV(p){const b=counts(p.state),c=counts(S),w=p.wr.slice(),full=p.m
 const less=[];if(b.personas<c.personas)less.push('personas ('+b.personas+' en la copia, '+c.personas+' ahora)');if(b.pasos<c.pasos)less.push('actividades completadas ('+b.pasos+' contra '+c.pasos+')');
 if(less.length)w.unshift('Esta copia tiene menos '+less.join(' y ')+' que tus datos actuales. Al volver a ella, lo de ahora se reemplaza (antes se guarda una copia para deshacer).');
 if(!full){try{if(CS.user())w.push('Tu sesión de Google está activa: al volver a esta copia también se sincronizará con tu nube y puede reemplazar lo que haya allí.')}catch(e){}}
-const rows=[['Actividades del plan activo',b.pasos+' de '+b.total,c.pasos+' de '+c.total,b.pasos<c.pasos],['Planes y ciclos',b.planes,c.planes,b.planes<c.planes],['Personas',b.personas,c.personas,b.personas<c.personas],['Inscritos (incentivos)',b.inscritos,c.inscritos,b.inscritos<c.inscritos],['Incentivos activos',b.incentivos,c.incentivos,b.incentivos<c.incentivos],['Asistencias a juntas',b.juntas,c.juntas,b.juntas<c.juntas],['Revisiones 1 a 1',b.rev,c.rev,b.rev<c.rev],['Registros de liderazgo',b.lider,c.lider,b.lider<c.lider],['Miembros de tu equipo',b.miembros,c.miembros,b.miembros<c.miembros],['Reportes recibidos',b.reportes,c.reportes,b.reportes<c.reportes],['Ciclos completados',b.ciclos,c.ciclos,b.ciclos<c.ciclos]].filter((r,i)=>i<3||r[1]||r[2]);
+const rows=[['Actividades del plan activo',b.pasos+' de '+b.total,c.pasos+' de '+c.total,b.pasos<c.pasos],['Planes y ciclos',b.planes,c.planes,b.planes<c.planes],['Personas',b.personas,c.personas,b.personas<c.personas],['Compras, seguimientos y bienestar',b.p3||0,c.p3||0,(b.p3||0)<(c.p3||0)],['Inscritos (incentivos)',b.inscritos,c.inscritos,b.inscritos<c.inscritos],['Incentivos activos',b.incentivos,c.incentivos,b.incentivos<c.incentivos],['Asistencias a juntas',b.juntas,c.juntas,b.juntas<c.juntas],['Revisiones 1 a 1',b.rev,c.rev,b.rev<c.rev],['Registros de liderazgo',b.lider,c.lider,b.lider<c.lider],['Miembros de tu equipo',b.miembros,c.miembros,b.miembros<c.miembros],['Reportes recibidos',b.reportes,c.reportes,b.reportes<c.reportes],['Ciclos completados',b.ciclos,c.ciclos,b.ciclos<c.ciclos]].filter((r,i)=>i<3||r[1]||r[2]);
 return`<button class="b t sm" data-a="bkback">← Cancelar</button><div class="hd"><div class="hi">Vista previa de la restauración</div><div class="m">Todavía no se ha cambiado nada.</div></div>${head(p)}
 ${full?'<div class="c"><div class="m">Este teléfono todavía no tiene datos tuyos, así que se cargará todo el respaldo.</div></div>':''}
 ${w.map(x=>`<div class="c" style="border-color:var(--or)"><div class="m" style="color:var(--ort)">⚠ ${E(x)}</div></div>`).join('')}
@@ -1078,6 +1162,550 @@ try{const m=sessionStorage.getItem('p30_bkmsg');if(m){sessionStorage.removeItem(
 return{mergeStates,covers:coversAll,coversRaw:covers,pristine,secN,secSum,plan,verifyExport,canon,build,parse,counts,check,snap,scrub,apply,keep,copies,loadCopy,FMT,BUILD,_setPend:p=>{pend=p}}})();
 window.BK=BK;
 
+/* ===== TRES PLANES: BIENESTAR · VENTAS · LIDERAZGO Y EQUIPO (build planes-3) =====
+   Rutas nuevas con ids propios (pbienestar, pventas, pliderazgo): sus claves (pventas0…) no chocan con las históricas
+   (venta0…, c4x30…, l4x30…, bienestar0…, mixto0…). Las rutas históricas siguen definidas SOLO para poder leer ciclos antiguos.
+   Datos por ciclo: S.g[clave].d.f (formulario de la actividad). Datos de personas y seguimientos: S.p3 (global, no pertenece a ningún ciclo). */
+const P3=(()=>{
+const isO=x=>!!x&&typeof x=='object'&&!Array.isArray(x);
+const IDS=['pbienestar','pventas','pliderazgo'];
+const NAMES=['Bienestar','Ventas','Liderazgo y Equipo'];
+/* valores configurables (NO son reglas oficiales de OMNILIFE) */
+const CFG={diasRevisionSemanal:7,diasRecompra:30,metaLista:10,diasBienestar:30};
+const is=r=>IDS.includes(r);
+const D0=()=>new Date().toISOString().slice(0,10);
+const addDays=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toISOString().slice(0,10)};
+const diffDays=(a,b)=>Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/864e5);
+const nid=p=>p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const fd=s=>{if(!s)return'—';try{const[y,m,d]=String(s).slice(0,10).split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'})}catch(e){return String(s)}};
+const dg=s=>String(s==null?'':s).replace(/\D/g,'').slice(-10);
+const nrm=s=>String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+const clone=x=>JSON.parse(JSON.stringify(x===undefined?null:x));
+/* ----- almacén global (se crea al primer uso; no pertenece a ningún ciclo) ----- */
+const KEYS=['compras','seg','bien','acu','hab','dev','reu','rec','ev'];
+const G=()=>{const o=S.p3=isO(S.p3)?S.p3:{};o.v=1;KEYS.forEach(k=>{if(!Array.isArray(o[k]))o[k]=[]});return o};
+const R=k=>(isO(S.p3)&&Array.isArray(S.p3[k]))?S.p3[k]:[];
+const up=(k,rec)=>{const a=G()[k],i=a.findIndex(x=>x.id===rec.id);if(i<0)a.push(rec);else a[i]=Object.assign(a[i],rec);return rec};
+const PP=id=>S.people.find(p=>String(p.id)===String(id));
+const pname=id=>{const p=PP(id);return p?p.nombre:(id==='yo'?'Yo':'Contacto no disponible')};
+/* ----- personas: un solo registro por persona ----- */
+const findDup=(name,tel)=>{const n=nrm(name),t=dg(tel);return S.people.find(p=>(n&&nrm(p.nombre)===n)||(t.length>=7&&dg(p.tel)===t))||null};
+const similar=(name)=>{const n=nrm(name);if(n.length<2)return[];return S.people.filter(p=>{const x=nrm(p.nombre);return x.includes(n)||n.includes(x)||x.split(' ').some(w=>w.length>2&&n.split(' ').includes(w))}).slice(0,6)};
+function ensureP(name,tel,tipo){const d=findDup(name,tel);if(d)return{p:d,created:false};
+ const p={id:uid(),nombre:String(name).trim(),tel:String(tel||'').trim(),tipo:tipo||'Prospecto',interes:'Ambos',estado:'Por contactar',obj:'Ventas',act:'Activo',createdAt:D0()};S.people.push(p);return{p,created:true}}
+/* seguimiento: registro en el historial + pendiente visible en Inicio (campos que la app ya usa) */
+function logSeg(r){const rec=Object.assign({fecha:D0(),cy:S.cyid||''},r);if(!rec.id)rec.id=nid('sg');up('seg',rec);return rec}
+function follow(p,fecha,tipo,nota){if(!p||!fecha)return;p.sig=(tipo||'Seguimiento')+(nota?': '+nota:'');p.fecha=fecha;if(['Por contactar'].includes(p.estado))p.estado='Conversación iniciada'}
+/* ----- estado del formulario de la actividad abierta ----- */
+const FK=i=>key(i==null?S.open:i);
+function FG(i){const k=FK(i);const g=S.g[k]=S.g[k]||{ppl:[],d:{}};g.ppl=g.ppl||[];g.d=g.d||{};return g}
+const F=i=>{const g=FG(i);return isO(g.d.f)?g.d.f:(g.d.f={})};
+const Fr=i=>{const g=S.g[FK(i)];return g&&g.d&&isO(g.d.f)?g.d.f:{}};
+function pathGet(o,ps){let c=o;for(const p of ps){if(c==null)return undefined;c=c[p]}return c}
+function pathSet(o,ps,v){let c=o;for(let i=0;i<ps.length-1;i++){const p=ps[i];if(!isO(c[p])&&!Array.isArray(c[p]))c[p]={};c=c[p]}c[ps[ps.length-1]]=v}
+/* raíz de un path: 'f/…' = formulario de la actividad; 'bw/<id>/…' = registro de bienestar */
+function resolve(path){const ps=String(path).split('/');if(ps[0]==='f')return{o:F(),ps:ps.slice(1)};if(ps[0]==='bw'){const r=R('bien').find(x=>x.id===ps[1]);return r?{o:r,ps:ps.slice(2)}:null}return null}
+const getv=path=>{const r=resolve(path);return r?pathGet(r.o,r.ps):undefined};
+const setv=(path,v)=>{const r=resolve(path);if(r)pathSet(r.o,r.ps,v)};
+/* ----- piezas de interfaz (sin diálogos nativos) ----- */
+const ATTR=s=>E(s).replace(/'/g,'&#39;');
+const chips=(path,opts,cur)=>opts.map(x=>{const v=Array.isArray(x)?x[0]:x,l=Array.isArray(x)?x[1]:x;return`<button class="ch ${cur===v?'on':''}" aria-pressed="${cur===v}" data-a="p3c" data-v="${ATTR(path)}|${ATTR(v)}">${E(l)}</button>`}).join('');
+const multi=(path,opts,cur,max)=>opts.map(x=>{const on=(cur||[]).includes(x);return`<button class="ch ${on?'on':''}" aria-pressed="${on}" data-a="p3m" data-v="${ATTR(path)}|${ATTR(x)}|${max||0}">${E(x)}</button>`}).join('');
+const inp=(path,ph,type,extra)=>`<input data-p3="${ATTR(path)}" ${type?'type="'+type+'"':''} maxlength="${type=='date'||type=='number'?20:160}" value="${ATTR(getv(path)==null?'':getv(path))}" placeholder="${ATTR(ph||'')}" ${extra||''}>`;
+const area=(path,ph,rows)=>`<textarea data-p3="${ATTR(path)}" rows="${rows||3}" maxlength="1200" placeholder="${ATTR(ph||'')}">${E(getv(path)==null?'':getv(path))}</textarea>`;
+const lab=t=>`<label>${t}</label>`;
+const note=(t,cls)=>`<div class="m" style="margin:6px 0${cls=='warn'?';color:var(--ort,inherit)':''}">${t}</div>`;
+const card=(h,extra)=>`<div class="c"${extra?' style="'+extra+'"':''}>${h}</div>`;
+const err=(m)=>m?`<div class="m" role="alert" style="color:var(--ert,#b42318);margin:4px 0">⚠ ${E(m)}</div>`:'';
+/* buscador de personas: elegir una existente o crear una nueva SOLO después de revisar posibles duplicados */
+function pick(id,target,tipo,sug){
+ const q=(S.tmp.p3q||{})[id]||'',t=(S.tmp.p3t||{})[id]||'';
+ return`<div class="c" style="background:transparent;padding:10px"><label>Buscar a una persona o crear una nueva</label><input data-p3q="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}" placeholder="Escribe un nombre…" autocomplete="off" value="${ATTR(q)}"><input data-p3t="${ATTR(id)}" type="tel" placeholder="Teléfono (opcional, ayuda a detectar duplicados)" value="${ATTR(t)}"><div id="p3r_${ATTR(id)}">${pickRes(id,target,tipo)}</div>${sug||''}</div>`}
+function pickRes(id,target,tipo){const q=(S.tmp.p3q||{})[id]||'',t=(S.tmp.p3t||{})[id]||'';if(nrm(q).length<2&&dg(t).length<7)return'<div class="m">Escribe al menos 2 letras para buscar en tus Personas.</div>';
+ let m=similar(q);const dt=t?findDup('',t):null;if(dt&&!m.includes(dt))m=[dt].concat(m);
+ const ex=findDup(q,t);
+ return`${m.map(p=>`<button class="ch" data-a="p3pick" data-v="${ATTR(target)}|${ATTR(p.id)}">${E(p.nombre)}${p.tipo?' · '+E(p.tipo):''}${p.tel&&dg(p.tel)===dg(t)&&t?' · mismo teléfono':''}</button>`).join('')}${ex?`<div class="m" style="margin-top:6px">Ya existe «${E(ex.nombre)}»: elígela arriba para no duplicarla.</div>`:`<button class="b sm s" style="margin-top:8px" data-a="p3newp" data-v="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}">+ Crear «${E(String(q).trim())}» como persona nueva</button>`}`}
+const sugBtns=(list,target)=>list.length?`<div class="m" style="margin-top:8px">Sugeridas:</div>${list.slice(0,8).map(p=>`<button class="ch" data-a="p3pick" data-v="${ATTR(target)}|${ATTR(p.id)}">${E(p.nombre)}</button>`).join('')}`:'';
+function applyTarget(target,pid){const[mode,path]=[target.slice(0,target.indexOf(':')),target.slice(target.indexOf(':')+1)];
+ if(mode==='add'){const a=getv(path)||[];if(!a.includes(pid))a.push(pid);setv(path,a)}else if(mode==='set')setv(path,pid)}
+const copyTxt=t=>{try{return copyT(t).then(ok=>toast(ok?'Copiado. Pégalo donde quieras enviarlo.':'No se pudo copiar.'))}catch(e){}};
+const wa=t=>{try{window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank')}catch(e){}};
+const sec=(t,h,open)=>`<details${open?' open':''}><summary>${t}</summary>${h}</details>`;
+/* ----- registro de las actividades ----- */
+const IMPL={pbienestar:[],pventas:[],pliderazgo:[]};
+const GOLD={pbienestar:[ 'Usar y compartir','Usar y compartir','Usar y compartir','Usar y compartir','Usar y compartir','Usar y compartir'],pventas:['Presentar','Presentar','Presentar','Presentar','Presentar','Conservar / Fidelizar','Conservar / Fidelizar','Conservar / Fidelizar'],pliderazgo:['Desarrollar equipos','Desarrollar equipos','Desarrollar equipos','Desarrollar equipos','Liderar','Liderar','Liderar','Liderar']};
+const mk=(t,what,how,ex)=>Object.assign(st(t,what,'',how,ex,{type:'p3'},''),{p3:1});
+function register(){
+ C.routes.pbienestar={name:'BIENESTAR · Usa, conoce y comparte',steps:[
+  mk('Conoce tu situación actual','Registra los datos iniciales de este ciclo y, si corresponde, calcula tu IMC como referencia general.','1) Elige para quién es el plan. 2) Anota fecha, peso y estatura si lo deseas. 3) Revisa tu IMC (solo referencia para adultos, no es diagnóstico).','Peso 70 kg, estatura 170 cm: IMC 24.2 como referencia general.'),
+  mk('Identifica tus necesidades','Anota lo que tú reportas: condiciones, antecedentes familiares y hábitos.','1) Marca lo que aplica; si no lo sabes, elige «No lo sé». 2) Indica si hay tratamiento o medicamentos. 3) Revisa el resumen con tus propias respuestas.','Hábitos: duerme 6–7 h, toma poca agua, hace ejercicio 1–2 veces por semana.'),
+  mk('Define tu objetivo','Elige un objetivo principal para los próximos 30 días y hazlo específico.','1) Elige el tipo de objetivo. 2) Escríbelo con tus palabras. 3) Revisa y edita la tarjeta con tu punto de partida y fechas.','Tomar agua en cada comida durante 30 días.'),
+  mk('Crea tu rutina personalizada','Elige 2–3 hábitos realistas y registra los productos que decidiste usar, su porción y horario.','1) Elige 2 o 3 hábitos. 2) Agrega solo los productos que tú decidiste usar con su porción y horario. 3) Las sugerencias vienen solo de información oficial.','Hábito: 8 vasos de agua. Producto: porción indicada en su etiqueta, en el desayuno.'),
+  mk('Usa y registra','Cada día registra cada hábito y producto como cumplido, parcial o no realizado, y cómo te sentiste.','1) Elige el día. 2) Marca cada hábito y producto. 3) Elige cómo te sentiste y agrega una nota si quieres. Si un día no registras, solo continúa hoy.','Hoy: agua cumplido, caminata parcial, producto del desayuno cumplido. Me sentí bien.'),
+  mk('Revisa tu progreso y comparte tu experiencia','Haz revisiones semanales y un cierre al día 30 que compare tu inicio con hoy.','1) Guarda tu revisión semanal. 2) Al cierre, compara datos y adherencia. 3) Escribe tu experiencia real; el testimonio es opcional y solo usa tus respuestas. 4) Decide cómo continuar.','Semana 1: cumplí 5 de 7 días. Ajuste: dejar el agua lista desde la noche.')]};
+ C.routes.pventas={name:'VENTAS · Presenta, vende y fideliza',steps:[
+  mk('¿A quién le voy a presentar?','Crea tu lista de personas (sin límite; meta inicial sugerida: 10) y elige con quién comenzar.','1) Busca a la persona en Personas o créala si no existe. 2) Anota relación, contexto, interés y estado. 3) Marca con quién comenzar para generar tus pendientes.','Laura (amiga del gimnasio): interés medio, comenzar esta semana.'),
+  mk('Inicia la conversación','Registra el canal y el resultado de cada conversación; programa seguimiento si no respondió o quedó para después.','1) Elige a la persona. 2) Usa o edita un guion natural. 3) Registra canal y resultado. 4) Si procede, programa el seguimiento. Si dice que no, se respeta.','Laura, por WhatsApp: conversaron y acordaron hablar el jueves.'),
+  mk('Descubre qué necesita','Registra lo que busca, los productos de interés y lo relevante que te dijo.','1) Elige a la persona. 2) Marca lo que busca y su nivel de interés. 3) Anota productos de interés y lo que te dijo. Bienestar es opcional y no es requisito para vender.','Laura busca más energía y tiene interés alto en un producto.'),
+  mk('Presenta la solución','Presenta de la necesidad al producto, con información oficial, y registra el resultado.','1) Parte de la necesidad. 2) Producto, características, uso y precio (solo información oficial). 3) Pregunta de cierre. 4) Registra el resultado; si compra, queda en la misma Persona.','Presentaste el producto a Laura; compró 1 pieza.'),
+  mk('Seguimiento y decisión','Revisa tus pendientes con el contexto de la última presentación y registra la decisión.','1) Elige a la persona con pendiente. 2) Registra su decisión. 3) Programa el siguiente contacto. 4) Si compra, pasa de Prospecto a Cliente en el mismo registro.','Luis decidió comprar: ahora es Cliente y su primer seguimiento queda programado.'),
+  mk('Acompaña a tu cliente','Revisa las compras y el seguimiento pendiente de tu cliente y acompáñalo.','1) Elige a tu cliente. 2) Registra cómo le va, dudas y necesidades. 3) Si desea acompañamiento de bienestar, inícialo. 4) Programa el siguiente contacto antes de cerrar.','Carmen va bien, tiene una duda de uso; próximo contacto en 7 días.'),
+  mk('Recompra y continuidad','Sugerencia de contacto según el historial de compras; registra la recompra sin perder las anteriores.','1) Revisa el historial. 2) Contacta con respeto, sin afirmar que se terminó el producto. 3) Registra la recompra en la misma Persona.','Carmen recompró 2 piezas; se agregó a su historial.'),
+  mk('Fideliza y fortalece la relación','Registra satisfacción y continuidad, pide referidos y ofrece información oficial si hay interés.','1) Elige a tu cliente. 2) Registra satisfacción y continuidad. 3) Si pide referidos, se crean sin duplicar a nadie. 4) Información de socio solo si hay interés y solo oficial.','Carmen está muy satisfecha y recomendó a su hermana: queda como contacto nuevo.')]};
+ C.routes.pliderazgo={name:'LIDERAZGO Y EQUIPO · Desarrolla, acompaña y lidera',steps:[
+  mk('Elige a quién vas a desarrollar','Selecciona a una persona de tu equipo (o agrégala sin duplicar) y registra lo que quiere, su experiencia y situación.','1) Busca o crea a la persona. 2) Anota lo que quiere, su experiencia y su situación. 3) La persona elige su plan; tú no decides por ella.','Miguel quiere ingreso adicional, poca experiencia; eligió Ventas.'),
+  mk('Acuerda su meta y compromiso','La meta es de la persona: registra su plan, meta, compromisos medibles, tu apoyo y la fecha de revisión.','1) Elige a la persona. 2) Meta en sus palabras. 3) Compromisos medibles y tu apoyo. 4) Fecha de revisión. Cada acuerdo queda en el historial.','Miguel: 5 conversaciones esta semana; apoyo: práctica contigo; revisión el viernes.'),
+  mk('Enséñale a ejecutar su plan','Registra qué habilidad practicaron, la evidencia y el nivel alcanzado.','1) Elige a la persona y la habilidad. 2) Anota evidencia o nota. 3) Marca el nivel (se lo expliqué … ya puede enseñárselo a otra persona).','Miguel — iniciar conversaciones: lo hicimos juntos.'),
+  mk('Revisa su avance y da seguimiento','Revisa compromisos, obstáculos y apoyo necesario; termina siempre con una siguiente acción y fecha.','1) Elige a la persona. 2) Marca el estado de cada compromiso. 3) Obstáculos y apoyo. 4) Siguiente acción concreta con fecha.','Miguel cumplió 3 de 5; obstáculo: tiempo; siguiente acción: practicar el martes.'),
+  mk('Organiza y conoce tu equipo','Mira tu equipo sin duplicados: plan, meta, incentivos, independencia y próximos seguimientos; prioriza apoyos.','1) Revisa a cada persona. 2) Marca la prioridad de apoyo. 3) Consulta el árbol de tu equipo.','Laura: prioridad alta, próxima revisión el lunes.'),
+  mk('Forma nuevos líderes','Identifica a quien está preparado para desarrollar a alguien; la nueva persona elige a quién acompañará.','1) Elige a la persona preparada. 2) Ella elige a quién acompañará (sin duplicar). 3) Usa los mismos pasos 1–4 para ese acompañamiento. 4) Mira la duplicación.','Laura (nivel alto) acompañará a Pedro; Pedro queda en el árbol bajo Laura.'),
+  mk('Reúne, reconoce y reactiva','Gestiona reuniones, crea reconocimientos con logros reales y reconecta con respeto.','1) Registra una reunión con sus acuerdos. 2) Reconoce un logro real. 3) Retoma el contacto con quien no has hablado, con respeto.','Reunión del lunes; reconocimiento a Laura por sus 5 seguimientos.'),
+  mk('Evalúa tu liderazgo','Resume tus últimos 30 días con datos reales, haz tu autoevaluación y define una prioridad.','1) Revisa tus datos reales. 2) Autoevaluación. 3) Una prioridad y acciones para el siguiente periodo. 4) Mira tus metas e incentivos.','Prioridad: dar seguimiento en 48 h.')]};
+ IDS.forEach(r=>C.routes[r].steps.forEach((s,i)=>{s.gold=GOLD[r][i];KIND[s.t]='p3'}));
+}
+register();
+return{IDS,NAMES,CFG,is,D0,addDays,diffDays,nid,fd,nrm,dg,clone,isO,G,R,up,PP,pname,findDup,similar,ensureP,logSeg,follow,FG,F,Fr,getv,setv,pathGet,pathSet,resolve,ATTR,chips,multi,inp,area,lab,note,card,err,pick,pickRes,sugBtns,applyTarget,copyTxt,wa,sec,IMPL,GOLD,KEYS};
+})();
+
+/* ----- módulo BIENESTAR (mismo módulo para «Para mí» y «Acompañar a alguien»; los datos pertenecen a la persona que hace el plan) ----- */
+(()=>{
+const {R,G,up,PP,pname,D0,addDays,diffDays,nid,fd,ATTR,chips,multi,inp,area,lab,note,card,err,pick,sugBtns,sec,IMPL,F,Fr,getv,setv,nrm,isO,CFG}=P3;
+const COND=['Diabetes','Presión alta','Colesterol o triglicéridos altos','Problemas de tiroides','Problemas digestivos','Embarazo o lactancia','Alergias o intolerancias','Otra','Ninguna que yo sepa','No lo sé'];
+const SUENO=['Menos de 6 h','6–7 h','7–8 h','Más de 8 h'],AGUA=['Poca','Regular','Suficiente'],ACTF=['Casi nunca','1–2 veces por semana','3–4 veces por semana','5 o más veces'],ALIM=['Casi siempre equilibrada','A veces','Pocas veces'];
+const OBJT=['Mejorar mi energía','Mejorar mis hábitos de alimentación','Mantener o mejorar mi peso','Mejorar mi rendimiento físico','Dormir mejor','Ser más constante con mi rutina','Otro'];
+const HAB=['Tomar agua suficiente','Dormir a una hora fija','Caminar o hacer ejercicio','Comer a mis horarios','Desayunar','Reducir el azúcar','Tomar mi suplemento a la hora acordada','Registrar cómo me siento'];
+const SENT=['Muy bien','Bien','Regular','Con poca energía','Prefiero no decir'];
+const PROMESA=/\b(cura|curar|curo|sana|sanar|trata|tratar|tratamiento|curativ|enfermedad|padecimiento|revierte|revertir)\w*/i;
+const NOTA_DX='Este resultado resume la información que tú proporcionaste. No constituye un diagnóstico médico.';
+const recOf=id=>R('bien').find(x=>x.id===id)||null;
+/* registro del ciclo (plan Bienestar): se guarda en la actividad 1 */
+const planRec=()=>{const f=P3.Fr(0);return f&&f.rec?recOf(f.rec):null};
+function newRec(owner,via){const mode=owner==='yo'?'yo':'acomp';const r={id:nid('bw'),owner,mode,via:via||'plan',cy:via=='plan'?(S.cyid||''):'',created:D0(),ini:{fecha:D0()},nec:{},obj:{},rut:{habitos:[],prods:[]},reg:{},revs:[],cierre:{},done:{}};G().bien.push(r);return r}
+const who=r=>r.owner==='yo'?'tú':pname(r.owner);
+const imc=ini=>{const p=parseFloat(ini.peso),e=parseFloat(ini.est);if(!(p>0)||!(e>0))return null;const v=p/((e/100)*(e/100));return isFinite(v)?Math.round(v*10)/10:null};
+const imcRef=v=>v<18.5?'por debajo del rango general':v<25?'dentro del rango general':v<30?'por encima del rango general':'muy por encima del rango general';
+const IMCTXT='El IMC es solo una referencia general para personas adultas (rangos generales de la OMS). No es un diagnóstico ni mide salud por sí solo.';
+const base=r=>'bw/'+r.id+'/';
+/* ===== Sec 1 ===== */
+function s1(r){const b=base(r),i=r.ini||{},v=imc(i),ad=i.adulto;
+ return`${lab('FECHA DE INICIO DEL CICLO')}${inp(b+'ini/fecha','', 'date')}${lab('¿PERSONA ADULTA (18 AÑOS O MÁS)?')}${chips(b+'ini/adulto',['Sí','No'],ad)}
+${ad=='Sí'?`${lab('¿QUIERES REGISTRAR PESO Y ESTATURA?')}${chips(b+'ini/omitir',[['No','Sí, registrar'],['Sí','Prefiero no registrarlos']],i.omitir||'No')}${i.omitir=='Sí'?'':`${lab('PESO (kg)')}${inp(b+'ini/peso','Ej.: 70','number','inputmode="decimal" step="0.1" min="0"')}${lab('ESTATURA (cm)')}${inp(b+'ini/est','Ej.: 170','number','inputmode="decimal" step="0.1" min="0"')}<div class="c" style="margin-top:8px"><b>IMC de referencia: <span data-p3out="imc">${v?v+' · '+imcRef(v):'—'}</span></b><div class="m" style="margin-top:4px">${IMCTXT}</div></div>`}`:ad=='No'?note('Para personas menores de 18 años no se calcula el IMC. Puedes registrar el resto de este plan.'):''}
+${lab('NOTA OPCIONAL')}${inp(b+'ini/nota','Algo que quieras recordar de tu punto de partida')}`}
+function c1(r){const i=r.ini||{};if(!i.fecha)return'Indica la fecha de inicio.';if(!i.adulto)return'Indica si es una persona adulta.';
+ if(i.adulto=='Sí'&&i.omitir!='Sí'){const p=parseFloat(i.peso),e=parseFloat(i.est);if(!(p>=20&&p<=300))return'Anota un peso válido (entre 20 y 300 kg) o elige «Prefiero no registrarlos».';if(!(e>=100&&e<=230))return'Anota una estatura válida (entre 100 y 230 cm) o elige «Prefiero no registrarlos».'}return true}
+function m1(r){const i=r.ini,v=i.adulto=='Sí'&&i.omitir!='Sí'?imc(i):null;return'Datos iniciales del '+fd(i.fecha)+(v?' · IMC de referencia '+v:'')}
+/* ===== Sec 2 ===== */
+function s2(r){const b=base(r),n=r.nec||{},h=n.hab||{};
+ const real=(n.cond||[]).filter(x=>!['Ninguna que yo sepa','No lo sé'].includes(x));
+ const especial=real.length||n.trat=='Sí';
+ return`${lab('CONDICIONES QUE '+(r.owner==='yo'?'TÚ REPORTAS':'LA PERSONA REPORTA')+' (puedes elegir varias)')}${multi(b+'nec/cond',COND,n.cond)}
+${lab('¿RECIBE TRATAMIENTO O TOMA MEDICAMENTOS?')}${chips(b+'nec/trat',['Sí','No','No lo sé'],n.trat)}${n.trat=='Sí'?`${lab('¿CUÁLES? (opcional)')}${inp(b+'nec/meds','Solo si quieres anotarlo')}`:''}
+${lab('ANTECEDENTES FAMILIARES (puedes elegir varios)')}${multi(b+'nec/fam',COND,n.fam)}
+${lab('HORAS DE SUEÑO')}${chips(b+'nec/hab/sueno',SUENO,h.sueno)}${lab('AGUA')}${chips(b+'nec/hab/agua',AGUA,h.agua)}${lab('ACTIVIDAD FÍSICA')}${chips(b+'nec/hab/act',ACTF,h.act)}${lab('ALIMENTACIÓN')}${chips(b+'nec/hab/alim',ALIM,h.alim)}
+<div class="c" style="margin-top:10px"><h3>Resumen de lo que reportas</h3>
+<div class="m"><b>Condiciones:</b> ${(n.cond||[]).length?E((n.cond||[]).join(', ')):'—'}<br><b>Tratamiento/medicamentos:</b> ${E(n.trat||'—')}<br><b>Antecedentes familiares:</b> ${(n.fam||[]).length?E((n.fam||[]).join(', ')):'—'}<br><b>Hábitos:</b> ${[h.sueno&&'sueño '+h.sueno,h.agua&&'agua '+h.agua,h.act&&'actividad '+h.act,h.alim&&'alimentación '+h.alim].filter(Boolean).map(E).join(' · ')||'—'}</div>
+${(n.cond||[]).includes('No lo sé')||n.trat=='No lo sé'||(n.fam||[]).includes('No lo sé')?note('Donde dijiste «No lo sé» no se asume nada: queda como información pendiente.'):''}
+<div class="m" style="margin-top:6px"><i>${NOTA_DX}</i></div></div>
+${especial?`<div class="c" style="border-color:var(--ac)"><b>Consideración especial</b><div class="m">Hay condiciones, tratamiento o medicamentos reportados. Antes de hacer cambios importantes en alimentación, actividad o suplementos, se recomienda consultar a un profesional de salud.</div></div>`:''}`}
+function c2(r){const n=r.nec||{},h=n.hab||{};if(!(n.cond||[]).length)return'Marca las condiciones que aplican (o «Ninguna que yo sepa» / «No lo sé»).';if(!n.trat)return'Indica si hay tratamiento o medicamentos.';if(!(n.fam||[]).length)return'Marca los antecedentes familiares (o «Ninguna que yo sepa» / «No lo sé»).';if(!h.sueno||!h.agua||!h.act||!h.alim)return'Completa los cuatro hábitos.';return true}
+const m2=r=>'Necesidades registradas por '+(r.owner==='yo'?'ti':pname(r.owner));
+/* ===== Sec 3 ===== */
+function s3(r){const b=base(r),o=r.obj||{},i=r.ini||{},v=i.adulto=='Sí'&&i.omitir!='Sí'?imc(i):null;
+ const ini0=o.inicio||i.fecha||D0(),fin0=o.fin||addDays(ini0,CFG.diasBienestar);
+ if(!o.inicio){o.inicio=ini0;o.fin=fin0;r.obj=o}
+ const bad=o.esp&&PROMESA.test(o.esp);
+ return`${lab('OBJETIVO PRINCIPAL PARA LOS PRÓXIMOS 30 DÍAS')}${chips(b+'obj/tipo',OBJT,o.tipo)}${lab('HAZLO ESPECÍFICO (con tus palabras)')}${area(b+'obj/esp','Ej.: Tomar agua en cada comida durante 30 días',2)}
+${bad?`<div class="m" role="alert" style="color:var(--ert,#b42318)">⚠ Escribe tu objetivo como un hábito o una meta personal. Esta guía no promete tratar ni curar enfermedades.</div>`:''}
+${lab('INICIO')}${inp(b+'obj/inicio','','date')}${lab('FIN (30 días, puedes editarlo)')}${inp(b+'obj/fin','','date')}
+<div class="c" style="margin-top:10px"><h3>Tarjeta de tu objetivo</h3><b>${E(o.esp||'(escribe tu objetivo)')}</b><div class="m">Tipo: ${E(o.tipo||'—')}<br>Del ${fd(o.inicio)} al ${fd(o.fin)}<br>Punto de partida: ${v?'IMC de referencia '+v+' · ':''}${E([((r.nec||{}).hab||{}).sueno&&'sueño '+r.nec.hab.sueno,((r.nec||{}).hab||{}).agua&&'agua '+r.nec.hab.agua].filter(Boolean).join(' · ')||'sin datos aún')}</div></div>`}
+function c3(r){const o=r.obj||{};if(!o.tipo)return'Elige el tipo de objetivo.';if(!o.esp||o.esp.trim().length<8)return'Escribe tu objetivo con un poco más de detalle.';if(PROMESA.test(o.esp))return'Reescribe el objetivo como hábito o meta personal (sin hablar de tratar o curar enfermedades).';if(!o.inicio||!o.fin||o.fin<=o.inicio)return'Revisa las fechas: el fin debe ser posterior al inicio.';return true}
+const m3=r=>'Objetivo: '+r.obj.esp.trim().slice(0,80);
+/* ===== Sec 4 ===== */
+const catalogo=()=>{try{return Object.entries(C.official||{}).filter(([k,v])=>v&&v.nombre)}catch(e){return[]}};
+function s4(r){const b=base(r),t=r.rut||{},hs=t.habitos||[],ps=t.prods||[],ct=catalogo(),o=r.obj||{};
+ return`${lab('ELIGE 2 O 3 HÁBITOS REALISTAS')}${multi(b+'rut/habitos',HAB,hs,3)}${lab('OTRO HÁBITO (opcional)')}<div class="row"><input data-p3q2="${ATTR(r.id)}" placeholder="Escribe un hábito propio" maxlength="80"><button class="b sm s" style="margin:0 0 0 8px;width:auto" data-a="p3addh" data-v="${ATTR(r.id)}">Agregar</button></div>
+${hs.filter(h=>!HAB.includes(h)).map(h=>`<button class="ch on" data-a="p3m" data-v="${ATTR(b+'rut/habitos')}|${ATTR(h)}|3">${E(h)} ✕</button>`).join('')}
+<h3 style="margin-top:12px">Productos que decidió usar</h3>${note('Registra solo lo que '+(r.owner==='yo'?'tú':'la persona')+' decidió usar. No se diagnostica ni se promete que un producto trate enfermedades.')}
+${ct.length?`<div class="m">Sugerencias de la información oficial cargada (explican por qué aparecen):</div>${ct.slice(0,6).map(([k,v])=>`<button class="ch" data-a="p3addp" data-v="${ATTR(r.id)}|${ATTR(v.nombre)}">+ ${E(v.nombre)}</button>`).join('')}<div class="m">Aparecen porque están en el catálogo oficial cargado en la app; ${E(o.tipo?'revisa si encajan con tu objetivo «'+o.tipo+'»':'define primero tu objetivo')}.</div>`:note('Aún no hay catálogo oficial cargado en la app, así que no se muestran sugerencias de productos. Puedes registrar el producto que decidiste usar.')}
+${ps.map((p,j)=>`<div class="c" style="margin-top:8px"><div class="row"><b>Producto ${j+1}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3delp" data-v="${ATTR(r.id)}|${ATTR(p.id)}">Quitar</button></div>${lab('PRODUCTO')}${inp(b+'rut/prods/'+j+'/prod','Nombre del producto')}${lab('PORCIÓN (según su etiqueta)')}${inp(b+'rut/prods/'+j+'/porcion','Ej.: según la etiqueta')}${lab('HORARIO')}${inp(b+'rut/prods/'+j+'/horario','Ej.: en el desayuno')}</div>`).join('')}
+<button class="b sm s" style="margin-top:8px" data-a="p3addp" data-v="${ATTR(r.id)}|">+ Agregar producto</button>`}
+function c4(r){const t=r.rut||{},hs=t.habitos||[];if(hs.length<2)return'Elige al menos 2 hábitos.';if(hs.length>3)return'Para sostener la rutina elige máximo 3 hábitos.';for(const p of t.prods||[]){if(!(p.prod||'').trim()||!(p.porcion||'').trim()||!(p.horario||'').trim())return'Completa producto, porción y horario (o quita el producto).'}return true}
+const m4=r=>'Rutina: '+(r.rut.habitos||[]).length+' hábitos'+((r.rut.prods||[]).length?' y '+r.rut.prods.length+' producto(s)':'');
+/* ===== Sec 5: registro diario ===== */
+const items=r=>{const t=r.rut||{};return(t.habitos||[]).map((h,i)=>({k:'h'+i,l:h,t:'Hábito'})).concat((t.prods||[]).map(p=>({k:'p'+p.id,l:p.prod||'Producto',t:'Producto'})))};
+const dayScore=(r,d)=>{const it=items(r),x=((r.reg||{})[d]||{}).m||{};if(!it.length)return null;const ans=it.filter(i=>x[i.k]);if(!ans.length)return null;return ans.reduce((s,i)=>s+(x[i.k]=='c'?1:x[i.k]=='p'?.5:0),0)/it.length};
+const days=r=>Object.keys(r.reg||{}).filter(d=>dayScore(r,d)!==null||((r.reg[d]||{}).sent)).sort();
+function stats(r){const ds=Object.keys(r.reg||{}).filter(d=>dayScore(r,d)!==null);const sc=ds.map(d=>dayScore(r,d));const acc=sc.length?sc.reduce((a,b)=>a+b,0)/sc.length:0;return{dias:ds.length,acc:Math.round(acc*100),ds}}
+function s5(r){const b=base(r),o=r.obj||{},st=S.tmp,d=(st.bwd&&st.bwd[r.id])||D0(),it=items(r);r.reg=r.reg||{};const x=r.reg[d]||{},m=x.m||{},sc=dayScore(r,d),S2=stats(r);
+ const lo=o.inicio||r.created||d,hi=D0();
+ if(!it.length)return note('Primero define tu rutina (hábitos y productos) en la actividad anterior.','warn');
+ return`${lab('DÍA QUE ESTÁS REGISTRANDO')}<input type="date" data-p3day="${ATTR(r.id)}" value="${ATTR(d)}" min="${ATTR(lo)}" max="${ATTR(hi)}">
+${it.map(i=>`<div class="c" style="margin-top:8px"><b>${E(i.l)}</b> <span class="tag">${i.t}</span><div>${chips(b+'reg/'+d+'/m/'+i.k,[['c','Cumplido'],['p','Parcial'],['n','No realizado']],m[i.k])}</div></div>`).join('')}
+${lab('¿CÓMO TE SENTISTE?')}${chips(b+'reg/'+d+'/sent',SENT,x.sent)}${lab('NOTA (opcional)')}${inp(b+'reg/'+d+'/nota','Algo que quieras recordar')}
+<div class="c" style="margin-top:10px"><h3>Tu avance</h3><div class="m">Día seleccionado: <b>${sc===null?'sin registrar':Math.round(sc*100)+' %'}</b><br>Avance acumulado: <b>${S2.acc} %</b> · Días registrados: <b>${S2.dias}</b> de ${CFG.diasBienestar}</div>
+${note('Sin culpa: si hubo días sin registrar, simplemente continúa hoy. Lo importante es la constancia, no la perfección.')}
+${revBox(r,S2)}</div>`}
+/* Actividad 5 = RECURRENTE: se mantiene disponible todo el ciclo de 30 días; no se cierra por llegar a N días. El ciclo se cierra en la actividad 6. */
+const revDue=(r,S2)=>Math.max(0,Math.floor(S2.dias/CFG.diasRevisionSemanal)-((r.revs||[]).length));
+function revBox(r,S2){const n=CFG.diasRevisionSemanal,due=revDue(r,S2),falta=n-(S2.dias%n),cerrado=!!(r.done&&r.done[6]);
+ const info=`<div class="m" style="margin-top:6px">Actividad <b>recurrente</b>: sigue disponible todo el ciclo de ${CFG.diasBienestar} días. ${cerrado?'Este ciclo ya se cerró en la actividad 6.':'Se cierra junto con el ciclo, en la actividad 6.'}</div>`;
+ if(cerrado)return info;
+ if(due>0)return info+`<div class="c" style="border-color:var(--ac);margin-top:8px"><b>Toca tu revisión semanal ${(r.revs||[]).length+1}</b><div class="m">Ya registraste ${S2.dias} días. Haz tu revisión semanal (qué funcionó y qué ajustarás) y sigue registrando después.</div>${r.via=='plan'?`<button class="b sm" data-a="p3bwrev" data-v="${ATTR(r.id)}">Hacer mi revisión semanal</button>`:`<div class="m">Búscala en el paso 6 de esta pantalla.</div>`}</div>`;
+ return info+`<div class="m" style="margin-top:6px">Próxima revisión semanal: te faltan ${falta} día(s) registrados.</div>`}
+function c5(r){const n=stats(r).dias;return (r.done&&r.done[6])?'Este ciclo ya se cerró en la actividad 6. Aquí puedes consultar tus '+n+' días registrados.':'Actividad recurrente: llevas '+n+' de '+CFG.diasBienestar+' días registrados. No se cierra por llegar a '+CFG.diasRevisionSemanal+' días: sigue disponible todo el ciclo y se cierra con la actividad 6.'}
+const m5=r=>{const s=stats(r);return s.dias+' día(s) registrados · avance acumulado '+s.acc+' %'};
+/* ===== Sec 6 ===== */
+function s6(r){const b=base(r),c=r.cierre||{},e=c.exp||{},s=stats(r),i=r.ini||{},v=i.adulto=='Sí'&&i.omitir!='Sí'?imc(i):null,pa=parseFloat(c.pesoAct),ea=parseFloat(i.est),va=pa>0&&ea>0?Math.round(pa/((ea/100)*(ea/100))*10)/10:null,rv=r.revs||[],dr=r.revDraft||{};
+ return`<h3>Revisión semanal</h3>${rv.length?rv.map(x=>`<div class="li"><span style="flex:1"><b>Semana ${x.sem}</b> · ${fd(x.fecha)}<br><span class="m">${E(x.avance||'')}${x.funciono?' · Funcionó: '+E(x.funciono):''}${x.ajustar?' · Ajustar: '+E(x.ajustar):''}</span></span></div>`).join(''):note('Aún no hay revisiones semanales.')}
+${lab('¿CÓMO VA TU OBJETIVO ESTA SEMANA?')}${chips(b+'revDraft/avance',['Avanzando','Más o menos','Me costó'],dr.avance)}${lab('¿QUÉ FUNCIONÓ?')}${inp(b+'revDraft/funciono','Opcional')}${lab('¿QUÉ AJUSTARÁS?')}${inp(b+'revDraft/ajustar','Opcional')}<button class="b sm s" data-a="p3rev" data-v="${ATTR(r.id)}">Guardar revisión semanal</button>
+<h3 style="margin-top:14px">Cierre del ciclo (día 30)</h3>
+<div class="c"><b>Inicio vs. hoy</b><div class="m">Inicio: ${fd(i.fecha)}${v?' · IMC de referencia '+v:''}${i.peso?' · peso '+E(i.peso)+' kg':''}<br>Hoy: ${va?'IMC de referencia '+va+' · ':''}${c.pesoAct?'peso '+E(c.pesoAct)+' kg · ':''}adherencia acumulada <b>${s.acc} %</b> · días registrados <b>${s.dias}</b> de ${CFG.diasBienestar}</div></div>
+${i.adulto=='Sí'&&i.omitir!='Sí'?`${lab('PESO ACTUAL (kg, opcional)')}${inp(b+'cierre/pesoAct','Opcional','number','inputmode="decimal" step="0.1"')}`:''}
+${lab('¿QUÉ CAMBIÓ PARA TI EN ESTE CICLO?')}${area(b+'cierre/exp/cambio','Con tus palabras',2)}${lab('¿QUÉ TE COSTÓ MÁS? (opcional)')}${area(b+'cierre/exp/costo','',2)}${lab('¿QUÉ LE DIRÍAS A ALGUIEN QUE EMPIEZA? (opcional)')}${area(b+'cierre/exp/consejo','',2)}
+<button class="b sm s" data-a="p3test" data-v="${ATTR(r.id)}">Armar un borrador con mis respuestas</button>
+${c.test!=null?`${lab('TU TESTIMONIO (opcional, editable; es tu texto y solo se comparte si tú quieres)')}${area(b+'cierre/test','',4)}<div class="row2"><button class="b sm s" data-a="p3testcp" data-v="${ATTR(r.id)}">Copiar</button></div>`:''}
+${lab('¿CÓMO QUIERES CONTINUAR?')}${chips(b+'cierre/decision',['Continuar otro ciclo','Cambiar objetivo o rutina','Finalizar'],c.decision)}
+${c.decision=='Continuar otro ciclo'?note('Al marcar esta actividad podrás iniciar un ciclo nuevo de Bienestar. Este ciclo se conserva.'):c.decision=='Cambiar objetivo o rutina'?note('Puedes editar tu objetivo (actividad 3) y tu rutina (actividad 4); los cambios quedan en este ciclo.'):''}`}
+function c6(r){const c=r.cierre||{};if(!((c.exp||{}).cambio||'').trim())return'Cuéntanos qué cambió para ti en este ciclo.';if(!c.decision)return'Elige cómo quieres continuar.';return true}
+const m6=r=>'Cierre: '+r.cierre.decision+' · adherencia '+stats(r).acc+' %';
+const SEC=[null,{r:s1,c:c1,m:m1},{r:s2,c:c2,m:m2},{r:s3,c:c3,m:m3},{r:s4,c:c4,m:m4},{r:s5,c:c5,m:m5},{r:s6,c:c6,m:m6}];
+/* ----- actividad del plan: elige para quién (actividad 1) y delega en las secciones ----- */
+function owner1(){const f=F(0),r=planRec();
+ if(r)return`<div class="c"><b>Plan de bienestar para: ${E(r.owner==='yo'?'Mí':pname(r.owner))}</b><div class="m">Los datos de este plan pertenecen a ${r.owner==='yo'?'ti':E(pname(r.owner))}.</div></div>`;
+ return`<div class="c"><label>¿PARA QUIÉN ES ESTE PLAN?</label>${chips('f/modo',[['yo','Mi bienestar / Para mí'],['acomp','Acompañar a alguien']],f.modo)}
+ ${f.modo=='acomp'?`<div class="m" style="margin-top:6px">Elige a la persona. Sus datos se guardan para ella, no para ti.</div>${f.sel?`<div class="m">Persona elegida: <b>${E(pname(f.sel))}</b></div>`:''}${pick('bwsel','set:f/sel','Prospecto')}`:''}
+ ${f.modo=='yo'||(f.modo=='acomp'&&f.sel)?`<button class="b" data-a="p3bwstart">Comenzar con los datos iniciales</button>`:''}</div>`}
+function mkImpl(n){return{render:()=>{const r=planRec();if(n===1&&!r)return owner1();if(!r)return note('Completa primero la actividad 1 para elegir para quién es el plan.','warn');return(n===1?owner1():'')+card(SEC[n].r(r))},
+ check:()=>{const r=planRec();if(!r)return n===1?'Elige para quién es el plan y comienza.':'Completa primero la actividad 1.';return SEC[n].c(r)},
+ commit:()=>{const r=planRec();r.done[n]=true;return SEC[n].m(r)}}}
+for(let n=1;n<=6;n++)IMPL.pbienestar.push(mkImpl(n));
+/* ----- vista independiente: Bienestar «Acompañar a alguien» desde Ventas o Liderazgo (mismo módulo) ----- */
+function view(id){const r=recOf(id);if(!r)return`<button class="b t sm" data-a="cerrar">← Volver</button><div class="c"><div class="m">No encontré ese registro de bienestar.</div></div>`;
+ const T=['','Conoce tu situación actual','Identifica tus necesidades','Define tu objetivo','Crea tu rutina personalizada','Usa y registra','Revisa tu progreso y comparte tu experiencia'];
+ return`<button class="b t sm" data-a="cerrar">← Volver</button><h1>Bienestar · ${E(pname(r.owner))}</h1><div class="c"><span class="tag">Acompañar a alguien</span><div class="m" style="margin-top:6px">Mismo módulo del plan Bienestar. Los datos pertenecen a ${E(pname(r.owner))}. Bienestar no es requisito para vender.</div></div>
+${[1,2,3,4,5,6].map(n=>{const ck=SEC[n].c(r);if(n===5)return sec(`5. ${E(T[5])} <span class="m">Recurrente · ${stats(r).dias} día(s)</span>`,`${SEC[5].r(r)}${note(ck)}`,false);return sec(`${n}. ${E(T[n])} <span class="m">${r.done&&r.done[n]?'✓ Registrado':''}</span>`,`${SEC[n].r(r)}${ck===true?'':err(ck)}<button class="b sm ${ck===true?'g':''}" data-a="p3bwdone" data-v="${ATTR(r.id)}|${n}">${r.done&&r.done[n]?'Actualizar':'Guardar este paso'}</button>`,n===1&&!(r.done||{})[1])}).join('')}`}
+function rowsBW(rec){return rec?`<details><summary>Datos de Bienestar de ${E(pname(rec.owner))}</summary><div class="li"><span style="flex:1">${[1,2,3,4,5,6].filter(n=>(rec.done||{})[n]).map(n=>E(SEC[n].m(rec))).join('<br>')||'Sin pasos registrados.'}</span></div></details>`:''}
+Object.assign(P3,{recOf,planRec,newRec,bwSec:SEC,bwView:view,bwStats:stats,bwRows:rowsBW,imc,PROMESA,NOTA_DX});
+Object.assign(A,{
+p3bwstart(){const f=F(0);if(planRec())return;const owner=f.modo=='acomp'?f.sel:'yo';if(!owner)return toast('Elige a la persona.');const r=newRec(owner,'plan');f.rec=r.id;G()},
+p3bwdone(e,v){const[id,n]=v.split('|'),r=recOf(id);if(!r)return;const c=SEC[+n].c(r);if(c!==true)return toast(String(c));r.done[+n]=true;if(+n===6)r.done[5]=true;toast('Paso '+n+' guardado.')},
+p3bwrev(e,id){S.open=5;S.v=null;S.tab='ruta'},
+p3bw(e,pid){let r=R('bien').find(x=>x.owner===pid&&!x.cy&&x.via!='plan');if(!r){r=newRec(pid,'acomp');r.via='acomp'}S.tmp.bwv=r.id;S.v=()=>view(S.tmp.bwv)},
+p3addh(e,id){const el=document.querySelector('[data-p3q2="'+id+'"]'),r=recOf(id);if(!r||!el)return;const t=(el.value||'').trim();if(!t)return;const hs=r.rut.habitos=r.rut.habitos||[];if(hs.length>=3)return toast('Para sostener la rutina elige máximo 3 hábitos.');if(!hs.includes(t))hs.push(t)},
+p3addp(e,v){const i=v.indexOf('|'),id=v.slice(0,i),nombre=v.slice(i+1),r=recOf(id);if(!r)return;r.rut.prods=r.rut.prods||[];r.rut.prods.push({id:nid('pr'),prod:nombre||'',porcion:'',horario:''})},
+p3delp(e,v){const[id,pid]=v.split('|'),r=recOf(id);if(!r)return;r.rut.prods=(r.rut.prods||[]).filter(p=>p.id!==pid)},
+p3rev(e,id){const r=recOf(id);if(!r)return;const d=r.revDraft||{};if(!d.avance)return toast('Elige cómo va tu objetivo esta semana.');r.revs=r.revs||[];r.revs.push({id:nid('rv'),sem:r.revs.length+1,fecha:D0(),avance:d.avance,funciono:d.funciono||'',ajustar:d.ajustar||''});r.revDraft={};toast('Revisión semanal guardada.')},
+p3test(e,id){const r=recOf(id);if(!r)return;const x=(r.cierre.exp)||{};const p=[x.cambio&&('Lo que cambió para mí: '+x.cambio.trim()),x.costo&&('Lo que más me costó: '+x.costo.trim()),x.consejo&&('Lo que le diría a alguien que empieza: '+x.consejo.trim())].filter(Boolean);r.cierre.test=p.join('\n')},
+p3testcp(e,id){const r=recOf(id);if(r&&r.cierre.test)P3.copyTxt(r.cierre.test)}});
+})();
+
+/* ----- plan VENTAS: 8 actividades (1–5 Presentar · 6–8 Conservar / Fidelizar) ----- */
+(()=>{
+const {R,G,up,PP,pname,D0,diffDays,nid,fd,ATTR,chips,multi,inp,area,lab,note,card,err,pick,sugBtns,IMPL,F,getv,setv,nrm,isO,CFG,logSeg,follow,ensureP,findDup}=P3;
+const REL=['Familiar','Amigo/a','Compañero/a de trabajo','Conocido/a','Cliente anterior','Persona de redes','Otro'];
+const INT=['Bajo','Medio','Alto','Aún no sé'];
+const CAN=['WhatsApp','Llamada','En persona','Mensaje de redes','Otro'];
+const RES2=['No respondió','Conversamos','Mostró interés','Pidió más información','Quiere hablar después','Acordamos seguimiento','Quiere probar producto','No le interesa por ahora'];
+const FOLLOW2=['No respondió','Quiere hablar después'];
+const EST2={'No respondió':'Conversación iniciada','Conversamos':'Conversación iniciada','Mostró interés':'Interesado','Pidió más información':'Interesado','Quiere hablar después':'Más adelante','Acordamos seguimiento':'Seguimiento','Quiere probar producto':'Interesado','No le interesa por ahora':'No interesado'};
+const BUSCA=['Más energía','Mejorar hábitos','Bienestar general','Control de peso','Rendimiento físico','Conocer productos','Generar ingreso adicional','Conocer el negocio','Otro'];
+const DEC=['Compró','Sigue evaluando','Quiere más información','No por ahora','No le interesa'];
+const isCli=p=>/^Cliente/.test(p.tipo||'')||p.estado=='Cliente';
+const dd=pid=>{const f=F();f.d=f.d||{};return f.d[pid]=f.d[pid]||{}};
+const cyId=()=>S.cyid||'';
+/* ----- fábrica: actividad con una lista de personas y una tarjeta por persona ----- */
+function plist(cfg){return{
+ render:()=>{const f=F(),l=f.ppl=f.ppl||[];f.d=f.d||{};
+  const sug=cfg.suggest?cfg.suggest().filter(p=>!l.includes(p.id)):[];
+  return`${cfg.intro||''}${l.length?'':note(cfg.vacio||'Aún no has elegido a nadie para esta actividad.')}${l.map(pid=>{const p=PP(pid);if(!p)return'';const d=dd(pid);if(cfg.init)cfg.init(pid,d,p);
+   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b> ${p.tipo?`<span class="tag">${E(p.tipo)}</span>`:''}<button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}</div>`}).join('')}
+  ${pick(cfg.id,'add:f/ppl',cfg.tipo||'Prospecto',sugBtns(sug,'add:f/ppl'))}`},
+ check:()=>{const f=F(),l=f.ppl||[];if(!l.length)return cfg.vacio||'Elige al menos una persona.';for(const pid of l){const p=PP(pid);if(!p)continue;const m=cfg.check(pid,dd(pid),p);if(m!==true)return p.nombre+': '+m}return cfg.all?cfg.all(l):true},
+ commit:()=>{const f=F(),l=(f.ppl||[]).filter(pid=>PP(pid));l.forEach(pid=>cfg.commit(pid,dd(pid),PP(pid)));return cfg.summary(l.length,l)}}}
+/* ----- compras: se guardan en la MISMA Persona (S.p3.compras) y nunca se sobrescriben ----- */
+const comprasOf=pid=>R('compras').filter(c=>c.pid===pid).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+const lastBuy=pid=>comprasOf(pid)[0]||null;
+function buyUI(pid,d,key){const rows=d[key]=d[key]||[];const b='f/d/'+pid+'/'+key;
+ return`${rows.map((c,j)=>`<div class="c" style="margin-top:6px"><div class="row"><b>Compra ${j+1}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3delrow" data-v="${ATTR(b)}|${ATTR(c.id)}">Quitar</button></div>${lab('PRODUCTO')}${inp(b+'/'+j+'/prod','Producto')}${lab('CANTIDAD')}${inp(b+'/'+j+'/cant','1','number','inputmode="numeric" min="1"')}${lab('PRECIO (por pieza o total, como lo cobraste)')}${inp(b+'/'+j+'/precio','Ej.: 450','number','inputmode="decimal" min="0"')}${lab('FECHA')}${inp(b+'/'+j+'/fecha','','date')}</div>`).join('')}<button class="b sm s" data-a="p3addrow" data-v="${ATTR(b)}|${ATTR(pid)}">+ Agregar compra</button>`}
+function buyCheck(d,key){const rows=d[key]||[];if(!rows.length)return'Registra la compra (producto, cantidad, precio y fecha).';for(const c of rows){if(!(c.prod||'').trim())return'Falta el producto de la compra.';if(!(parseFloat(c.cant)>0))return'La cantidad debe ser mayor a 0.';if(c.precio===''||c.precio==null||!(parseFloat(c.precio)>=0))return'Anota el precio de la compra.';if(!c.fecha)return'Falta la fecha de la compra.'}return true}
+function buyCommit(pid,d,key,src){const p=PP(pid);(d[key]||[]).forEach(c=>up('compras',{id:'cp_'+c.id,pid,prod:c.prod.trim(),cant:parseFloat(c.cant),precio:parseFloat(c.precio),fecha:c.fecha,src,cy:cyId()}));
+ if(p){if(p.tipo==='Prospecto'||!p.tipo)p.tipo='Cliente';else if(p.tipo==='Miembro del equipo')p.tipo='Cliente y miembro';p.estado='Cliente';p.ult=D0()}}
+const dateRow=(pid,d,f,label)=>`${lab(label)}${inp('f/d/'+pid+'/'+f,'','date')}`;
+const needDate=(d,f)=>d[f]?true:false;
+const ctxLast=pid=>{const s=R('seg').filter(x=>x.pid===pid).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))||String(b.id).localeCompare(String(a.id)))[0];return s?`<div class="m" style="margin:4px 0">Último registro (${fd(s.fecha)}): ${E([s.tipo,s.prod,s.res].filter(Boolean).join(' · '))}${s.nota?' — '+E(s.nota):''}</div>`:'<div class="m">Sin registros previos.</div>'};
+const histBuys=pid=>{const c=comprasOf(pid);return c.length?`<div class="m"><b>Compras registradas:</b> ${c.slice(0,4).map(x=>E(x.prod)+' ×'+x.cant+' ('+fd(x.fecha)+')').join(' · ')}${c.length>4?' · y '+(c.length-4)+' más':''}</div>`:'<div class="m">Aún no tiene compras registradas.</div>'};
+const dueList=()=>S.people.filter(p=>(p.fecha&&p.fecha<=D0()||['Presentación','Seguimiento','Interesado'].includes(p.estado))&&!isCli(p)&&p.estado!='No interesado').sort((a,b)=>String(a.fecha||'9').localeCompare(String(b.fecha||'9')));
+const clients=()=>S.people.filter(isCli);
+/* ===== 1 ===== */
+IMPL.pventas[0]={
+ render:()=>{const f=F(),l=f.ppl=f.ppl||[];f.d=f.d||{};
+  const start=l.filter(pid=>(f.d[pid]||{}).start=='Sí').length;
+  return`<div class="c"><b>Tu lista: ${l.length} ${l.length==1?'persona':'personas'}</b><div class="m">Meta inicial sugerida: ${CFG.metaLista} personas. No es obligatoria y la lista no tiene límite. Con quién comenzar: ${start}.</div></div>
+  ${l.map(pid=>{const p=PP(pid);if(!p)return'';const d=dd(pid);if(d.rel===undefined){d.rel=p.rel||'';d.ctx=p.ctx||'';d.int=p.intNivel||'';d.est=p.estado||'Por contactar';d.start=''}
+   const b='f/d/'+pid+'/';return`<div class="c"><div class="row"><b>${E(p.nombre)}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de la lista</button></div>${lab('RELACIÓN')}${chips(b+'rel',REL,d.rel)}${lab('CONTEXTO')}${inp(b+'ctx','Ej.: la conocí en el gimnasio')}${lab('INTERÉS')}${chips(b+'int',INT,d.int)}${lab('ESTADO')}${chips(b+'est',C.estados,d.est)}${lab('¿COMENZAR CON ESTA PERSONA?')}${chips(b+'start',['Sí','No'],d.start)}</div>`}).join('')}
+  ${pick('v1','add:f/ppl','Prospecto',sugBtns(S.people.filter(p=>!l.includes(p.id)&&!isCli(p)&&p.estado!='No interesado').slice(0,8),'add:f/ppl'))}`},
+ check:()=>{const f=F(),l=f.ppl||[];if(!l.length)return'Agrega al menos una persona a tu lista.';for(const pid of l){const d=dd(pid),p=PP(pid);if(!p)continue;if(!d.rel||!d.int||!d.est)return p.nombre+': elige relación, interés y estado.';if(!d.start)return p.nombre+': indica si comienzas con esta persona.'}if(!l.some(pid=>dd(pid).start=='Sí'))return'Elige al menos a una persona con quien comenzar para generar tus pendientes.';return true},
+ commit:()=>{const f=F(),l=(f.ppl||[]).filter(pid=>PP(pid));let n=0;l.forEach(pid=>{const d=dd(pid),p=PP(pid);p.rel=d.rel;p.ctx=d.ctx||'';p.intNivel=d.int;if(p.estado!=='Cliente')p.estado=d.est;
+  if(d.start=='Sí'){n++;follow(p,D0(),'Iniciar conversación');logSeg({id:'sg_v1_'+cyId()+'_'+pid,pid,tipo:'pendiente',res:'Iniciar conversación',prox:D0(),src:'ventas1'})}});
+  return'Lista de '+l.length+' personas · '+n+' para comenzar (pendientes generados)'}};
+/* ===== 2 ===== */
+const SC=()=>(C.scripts||[]).map((s,i)=>[s,i]).filter(([s])=>['Prospección','Seguimiento','Reactivación'].includes(s[0]));
+IMPL.pventas[1]=plist({id:'v2',suggest:()=>S.people.filter(p=>!isCli(p)&&(p.estado=='Por contactar'||p.fecha&&p.fecha<=D0())),vacio:'Elige a la persona con quien conversaste.',
+ intro:`<div class="c" style="background:transparent"><div class="m">Usa un guion como punto de partida y edítalo con tus palabras. Si la persona dice que no, se respeta: no se programa seguimiento.</div><button class="b sm s" data-a="obj">Tengo una objeción</button></div>`,
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/';const nf=d.res&&FOLLOW2.includes(d.res);
+  return`${lab('CANAL')}${chips(b+'canal',CAN,d.canal)}${lab('GUION (editable)')}<div>${SC().slice(0,4).map(([s,i])=>`<button class="ch" data-a="p3guion" data-v="${ATTR(pid)}|${i}">${E(s[1])}</button>`).join('')}</div>${area(b+'guion','Elige un guion arriba o escribe el tuyo',3)}<button class="b sm s" data-a="p3cpd" data-v="${ATTR(pid)}">Copiar mensaje</button>
+  ${lab('RESULTADO DE LA CONVERSACIÓN')}${chips(b+'res',RES2,d.res)}
+  ${d.res=='No le interesa por ahora'?note('Se respeta su decisión: no se programará seguimiento y quedará como «No interesado».'):`${lab(nf?'FECHA DE SEGUIMIENTO (obligatoria)':'FECHA DE SEGUIMIENTO (opcional)')}${inp(b+'prox','','date')}`}
+  ${lab('NOTA (opcional)')}${inp(b+'nota','Una frase')}`},
+ check:(pid,d)=>{if(!d.canal)return'elige el canal.';if(!d.res)return'registra el resultado.';if(FOLLOW2.includes(d.res)&&!d.prox)return'programa la fecha de seguimiento.';return true},
+ commit:(pid,d,p)=>{p.estado=EST2[d.res]||p.estado;p.ult=D0();logSeg({id:'sg_v2_'+cyId()+'_'+pid,pid,tipo:'conversación',canal:d.canal,res:d.res,nota:d.nota||'',prox:d.res=='No le interesa por ahora'?'':(d.prox||''),src:'ventas2'});
+  if(d.res=='No le interesa por ahora'){p.sig='';p.fecha=''}else if(d.prox)follow(p,d.prox,'Seguimiento')},
+ summary:n=>n+' conversación(es) registradas'});
+/* ===== 3 ===== */
+IMPL.pventas[2]=plist({id:'v3',suggest:()=>S.people.filter(p=>!isCli(p)&&['Conversación iniciada','Interesado','Seguimiento'].includes(p.estado)),vacio:'Elige a la persona con quien descubriste lo que necesita.',
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/';return`${lab('¿QUÉ BUSCA? (puedes marcar varias)')}${multi(b+'busca',BUSCA,d.busca)}${lab('PRODUCTOS DE INTERÉS')}${inp(b+'prods','Ej.: el que me comentó para energía')}${lab('LO QUE DIJO (opcional)')}${area(b+'dijo','Sus palabras, sin interpretar ni diagnosticar',2)}${lab('NIVEL DE INTERÉS')}${chips(b+'int',INT,d.int)}
+  <div class="c" style="background:transparent"><div class="m">Si la persona necesita acompañamiento de bienestar más profundo, puedes abrir el módulo Bienestar en modo «Acompañar a alguien». <b>Bienestar no es requisito para vender.</b></div><button class="b sm s" data-a="p3bw" data-v="${ATTR(pid)}">Abrir Bienestar para ${E(p.nombre)}</button></div>`},
+ check:(pid,d)=>(d.busca||[]).length?(d.int?true:'indica su nivel de interés.'):'marca qué busca.',
+ commit:(pid,d,p)=>{p.necesidad=(d.busca||[]).join(', ');p.intNivel=d.int;if(d.prods)p.productosInt=d.prods;if(['Por contactar','Conversación iniciada'].includes(p.estado))p.estado='Interesado';p.ult=D0();logSeg({id:'sg_v3_'+cyId()+'_'+pid,pid,tipo:'necesidad',res:(d.busca||[]).join(', '),prod:d.prods||'',nota:d.dijo||'',src:'ventas3'})},
+ summary:n=>'Necesidades registradas de '+n+' persona(s)'});
+/* ===== 4 ===== */
+const CIERRE='¿Con lo que platicamos, cuál opción te hace más sentido?';
+IMPL.pventas[3]=plist({id:'v4',suggest:()=>S.people.filter(p=>!isCli(p)&&['Interesado','Seguimiento','Presentación'].includes(p.estado)),vacio:'Elige a la persona a quien le presentaste.',
+ init:(pid,d,p)=>{if(d.nec===undefined){d.nec=p.necesidad||'';d.cierre=CIERRE}},
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/';return`${note('Usa solo información oficial. '+(Object.keys(C.official||{}).length?'':'Aún no hay catálogo oficial cargado en la app: escribe únicamente lo que figure en material oficial; la app no inventa datos de productos.'))}${lab('NECESIDAD')}${inp(b+'nec','Lo que busca')}${lab('PRODUCTO')}${inp(b+'prod','Producto presentado')}${lab('CARACTERÍSTICAS')}${inp(b+'carac','Según información oficial')}${lab('CÓMO SE USA')}${inp(b+'uso','Según información oficial')}${lab('PRECIO')}${inp(b+'precio','Según lista de precios oficial')}${lab('PREGUNTA DE CIERRE (editable)')}${inp(b+'cierre','')}
+  ${lab('RESULTADO')}${chips(b+'res',['Compró','Tiene interés','Quiere pensarlo','No le interesa'],d.res)}
+  ${d.res=='Compró'?`<h3>Compra (se guarda en la misma Persona)</h3>${buyUI(pid,d,'buy')}${lab('PRIMER SEGUIMIENTO DE CLIENTE (obligatorio)')}${inp(b+'prox','','date')}`:d.res=='Tiene interés'||d.res=='Quiere pensarlo'?`${lab('FECHA DE SEGUIMIENTO (obligatoria)')}${inp(b+'prox','','date')}`:d.res=='No le interesa'?note('Se respeta su decisión. Quedará como «No interesado».'):''}`},
+ check:(pid,d)=>{if(!(d.prod||'').trim())return'escribe el producto presentado.';if(!d.res)return'registra el resultado.';if(d.res=='Compró'){const m=buyCheck(d,'buy');if(m!==true)return m;if(!d.prox)return'programa el primer seguimiento de cliente.'}else if(['Tiene interés','Quiere pensarlo'].includes(d.res)&&!d.prox)return'programa el seguimiento.';return true},
+ commit:(pid,d,p)=>{logSeg({id:'sg_v4_'+cyId()+'_'+pid,pid,tipo:'presentación',prod:d.prod,res:d.res,nota:d.carac||'',prox:d.res=='No le interesa'?'':(d.prox||''),src:'ventas4'});p.ult=D0();
+  if(d.res=='Compró'){buyCommit(pid,d,'buy','presentacion');follow(p,d.prox,'Primer seguimiento de cliente')}else if(d.res=='No le interesa'){p.estado='No interesado';p.sig='';p.fecha=''}else{p.estado='Presentación';follow(p,d.prox,'Seguimiento')}},
+ summary:n=>n+' presentación(es) registradas'});
+/* ===== 5 ===== */
+IMPL.pventas[4]=plist({id:'v5',suggest:dueList,vacio:'Elige a la persona con seguimiento pendiente.',
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/';return`${ctxLast(pid)}${p.fecha?`<div class="m">Pendiente: ${E(p.sig||'seguimiento')} · ${fd(p.fecha)}</div>`:''}${lab('DECISIÓN')}${chips(b+'dec',DEC,d.dec)}
+  ${d.dec=='Compró'?`<h3>Compra (Prospecto → Cliente en el mismo registro)</h3>${buyUI(pid,d,'buy')}${lab('PRIMER SEGUIMIENTO DE CLIENTE (obligatorio)')}${inp(b+'prox','','date')}`:['Sigue evaluando','Quiere más información','No por ahora'].includes(d.dec)?`${lab('SIGUIENTE CONTACTO (obligatorio)')}${inp(b+'prox','','date')}`:d.dec=='No le interesa'?note('Se respeta su decisión: quedará como «No interesado» sin seguimiento.'):''}${lab('NOTA (opcional)')}${inp(b+'nota','')}`},
+ check:(pid,d)=>{if(!d.dec)return'registra su decisión.';if(d.dec=='Compró'){const m=buyCheck(d,'buy');if(m!==true)return m;if(!d.prox)return'programa el primer seguimiento de cliente.'}else if(d.dec!='No le interesa'&&!d.prox)return'programa el siguiente contacto.';return true},
+ commit:(pid,d,p)=>{logSeg({id:'sg_v5_'+cyId()+'_'+pid,pid,tipo:'decisión',res:d.dec,nota:d.nota||'',prox:d.dec=='No le interesa'?'':(d.prox||''),src:'ventas5'});p.ult=D0();
+  if(d.dec=='Compró'){buyCommit(pid,d,'buy','decision');follow(p,d.prox,'Primer seguimiento de cliente')}else if(d.dec=='No le interesa'){p.estado='No interesado';p.sig='';p.fecha=''}else{p.estado='Seguimiento';follow(p,d.prox,'Seguimiento')}},
+ summary:n=>n+' decisión(es) registradas'});
+/* ===== 6 ===== */
+IMPL.pventas[5]=plist({id:'v6',tipo:'Cliente',suggest:clients,vacio:'Elige a un cliente.',
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/';return`${histBuys(pid)}${p.fecha?`<div class="m">Seguimiento pendiente: ${E(p.sig||'seguimiento')} · ${fd(p.fecha)}</div>`:''}${lab('¿CÓMO LE VA?')}${chips(b+'como',['Muy bien','Bien','Con dudas','Con dificultades'],d.como)}${lab('DUDAS')}${inp(b+'dudas','Opcional')}${lab('NECESIDADES')}${inp(b+'nec','Opcional')}${lab('¿DESEA ACOMPAÑAMIENTO DE BIENESTAR?')}${chips(b+'acomp',['Sí','No'],d.acomp)}${d.acomp=='Sí'?`<button class="b sm s" data-a="p3bw" data-v="${ATTR(pid)}">Iniciar Bienestar para ${E(p.nombre)}</button>`:''}${lab('SIGUIENTE CONTACTO (obligatorio antes de cerrar)')}${inp(b+'prox','','date')}`},
+ check:(pid,d)=>!d.como?'indica cómo le va.':!d.acomp?'indica si desea acompañamiento de bienestar.':!d.prox?'programa el siguiente contacto.':true,
+ commit:(pid,d,p)=>{logSeg({id:'sg_v6_'+cyId()+'_'+pid,pid,tipo:'acompañamiento de cliente',res:d.como,nota:[d.dudas&&'Dudas: '+d.dudas,d.nec&&'Necesidades: '+d.nec].filter(Boolean).join(' · '),prox:d.prox,src:'ventas6'});follow(p,d.prox,'Seguimiento a cliente');p.ult=D0()},
+ summary:n=>n+' cliente(s) acompañados'});
+/* ===== 7 ===== */
+IMPL.pventas[6]=plist({id:'v7',tipo:'Cliente',suggest:clients,vacio:'Elige a un cliente.',
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/',lb=lastBuy(pid),dias=lb?diffDays(lb.fecha,D0()):null;
+  return`${histBuys(pid)}${lb&&dias>=CFG.diasRecompra?`<div class="c" style="border-color:var(--ac)"><b>Sugerencia de contacto</b><div class="m">Su última compra fue hace ${dias} días (${fd(lb.fecha)}). Puedes escribirle para saber cómo va; no se asume que el producto ya se terminó.</div></div>`:lb?note('Su última compra fue hace '+dias+' días.'):''}${lab('RESULTADO')}${chips(b+'res',['Recompró','Aún no recompra','Quiere más adelante'],d.res)}${d.res=='Recompró'?`<h3>Recompra (se suma a su historial)</h3>${buyUI(pid,d,'buy')}${lab('SIGUIENTE CONTACTO (opcional)')}${inp(b+'prox','','date')}`:d.res?`${lab('SIGUIENTE CONTACTO (obligatorio)')}${inp(b+'prox','','date')}`:''}`},
+ check:(pid,d)=>{if(!d.res)return'registra el resultado.';if(d.res=='Recompró')return buyCheck(d,'buy');return d.prox?true:'programa el siguiente contacto.'},
+ commit:(pid,d,p)=>{if(d.res=='Recompró')buyCommit(pid,d,'buy','recompra');logSeg({id:'sg_v7_'+cyId()+'_'+pid,pid,tipo:'recompra',res:d.res,prox:d.prox||'',src:'ventas7'});if(d.prox)follow(p,d.prox,'Seguimiento a cliente');p.ult=D0()},
+ summary:n=>n+' cliente(s) revisados para recompra'});
+/* ===== 8 ===== */
+IMPL.pventas[7]=plist({id:'v8',tipo:'Cliente',suggest:clients,vacio:'Elige a un cliente.',
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/',refs=d.refs=d.refs||[];
+  return`${lab('SATISFACCIÓN')}${chips(b+'sat',['Muy satisfecho/a','Satisfecho/a','Regular','Insatisfecho/a'],d.sat)}${lab('CONTINUIDAD')}${chips(b+'cont',['Continuará','Lo está evaluando','No continuará'],d.cont)}${lab('¿PEDISTE REFERIDOS?')}${chips(b+'ref',['Sí','No'],d.ref)}
+  ${d.ref=='Sí'?`${refs.map((r,j)=>`<div class="c" style="margin-top:6px"><div class="row"><b>Referido ${j+1}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3delrow" data-v="${ATTR(b+'refs')}|${ATTR(r.id)}">Quitar</button></div>${lab('NOMBRE')}${inp(b+'refs/'+j+'/nombre','Nombre')}${lab('TELÉFONO (opcional)')}${inp(b+'refs/'+j+'/tel','','tel')}</div>`).join('')}<button class="b sm s" data-a="p3addrow" data-v="${ATTR(b+'refs')}|">+ Agregar referido</button>${note('Si el referido ya existe en Personas, se vincula sin duplicarlo.')}`:''}
+  ${lab('INFORMACIÓN OFICIAL SOBRE REGISTRARSE COMO SOCIO (opcional)')}${chips(b+'socio',['Ofrecí información oficial','No por ahora'],d.socio)}${note('Ofrece solo información oficial. No prometas ingresos ni inventes beneficios o condiciones.')}`},
+ check:(pid,d,p)=>{if(!d.sat)return'registra la satisfacción.';if(!d.cont)return'registra la continuidad.';if(d.ref=='Sí'){const rs=(d.refs||[]);if(!rs.length)return'agrega al menos un referido o elige «No».';if(rs.some(r=>!(r.nombre||'').trim()))return'falta el nombre de un referido.'}return true},
+ commit:(pid,d,p)=>{logSeg({id:'sg_v8_'+cyId()+'_'+pid,pid,tipo:'fidelización',res:d.sat+' · '+d.cont,nota:d.socio||'',src:'ventas8'});p.ult=D0();
+  if(d.ref=='Sí')(d.refs||[]).forEach(r=>{if(!(r.nombre||'').trim())return;if(r.pid&&PP(r.pid))return;const x=ensureP(r.nombre,r.tel,'Prospecto');r.pid=x.p.id;if(x.p.id===pid)return;if(x.created){x.p.refPor=pid;x.p.rel='Referido';x.p.ctx='Referido por '+p.nombre}else if(!x.p.refPor){x.p.refPor=pid}logSeg({id:'sg_v8r_'+cyId()+'_'+pid+'_'+r.id,pid:x.p.id,tipo:'referido',res:'Referido por '+p.nombre,src:'ventas8'})})},
+ summary:n=>n+' cliente(s) fidelizados'});
+})();
+
+/* ----- plan LIDERAZGO Y EQUIPO: 8 actividades (1–4 Desarrollar equipos · 5–8 Liderar) ----- */
+(()=>{
+const {R,G,up,PP,pname,D0,addDays,diffDays,nid,fd,ATTR,chips,multi,inp,area,lab,note,card,err,pick,sugBtns,IMPL,F,getv,setv,nrm,isO,CFG,logSeg,follow,ensureP,findDup,copyTxt,wa}=P3;
+const PLANES=['Bienestar','Ventas','Liderazgo y Equipo','Todavía no lo tengo claro'];
+const EXPS=['Nunca ha vendido ni construido equipo','Poca','Regular','Mucha'];
+const SKILLS=['Hacer su lista','Iniciar conversaciones','Dar seguimiento','Presentar productos','Presentar el negocio','Resolver objeciones','Registrar en la app','Enseñar a otra persona'];
+const NIV=['Se lo expliqué','Lo hicimos juntos','Lo hizo con mi apoyo','Ya puede hacerlo solo','Ya puede enseñárselo a otra persona'];
+const DIMS=['Claridad al acordar metas','Seguimiento oportuno','Reconocimiento','Delegación y confianza','Formación de nuevos líderes'];
+const dd=pid=>{const f=F();f.d=f.d||{};return f.d[pid]=f.d[pid]||{}};
+const cyId=()=>S.cyid||'';
+const devs=()=>P3.R('dev');
+const dev=pid=>devs().find(x=>x.pid===pid)||null;
+const isTeam=p=>/iembro/.test(p.tipo||'');
+const teamP=()=>{const ids=new Set(devs().map(x=>x.pid));return S.people.filter(p=>isTeam(p)||ids.has(p.id))};
+const latestHab=pid=>{const m={};R('hab').filter(h=>h.pid===pid).sort((a,b)=>(a.at||0)-(b.at||0)).forEach(h=>{m[h.skill]=h});return m};
+const lvl=h=>NIV.indexOf(h.nivel);
+const maxLvl=pid=>{const v=Object.values(latestHab(pid)).map(lvl);return v.length?Math.max(...v):-1};
+const indep=pid=>{const m=maxLvl(pid);return m<0?'Sin habilidades registradas':'Nivel más alto: '+NIV[m]};
+const latestAcu=pid=>R('acu').filter(a=>a.pid===pid).sort((a,b)=>(a.at||0)-(b.at||0)).pop()||null;
+const incNames=keys=>(keys||[]).map(k=>(C.inc[k]||{}).n||k);
+function ensureDev(pid,patch){const id='dv_'+pid;let d=dev(pid);if(!d)d={id,pid,by:'yo',plan:'',since:D0()};Object.assign(d,patch||{});up('dev',d);return d}
+const multiP=(path,list,cur)=>list.map(p=>`<button class="ch ${(cur||[]).includes(p.id)?'on':''}" aria-pressed="${(cur||[]).includes(p.id)}" data-a="p3m" data-v="${ATTR(path)}|${ATTR(p.id)}|0">${E(p.nombre)}</button>`).join('');
+function plist(cfg){return{
+ render:()=>{const f=F(),l=f.ppl=f.ppl||[];f.d=f.d||{};const sug=cfg.suggest?cfg.suggest().filter(p=>!l.includes(p.id)):[];
+  return`${cfg.intro?cfg.intro():''}${l.length?'':note(cfg.vacio)}${l.map(pid=>{const p=PP(pid);if(!p)return'';const d=dd(pid);if(cfg.init)cfg.init(pid,d,p);
+   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}</div>`}).join('')}${pick(cfg.id,'add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'))}`},
+ check:()=>{const l=F().ppl||[];if(!l.length)return cfg.vacio;for(const pid of l){const p=PP(pid);if(!p)continue;const m=cfg.check(pid,dd(pid),p);if(m!==true)return p.nombre+': '+m}return true},
+ commit:()=>{const l=(F().ppl||[]).filter(pid=>PP(pid));l.forEach(pid=>cfg.commit(pid,dd(pid),PP(pid)));return cfg.summary(l.length)}}}
+const toTeam=p=>{if(!p.tipo||p.tipo==='Prospecto')p.tipo='Miembro del equipo';else if(p.tipo==='Cliente')p.tipo='Cliente y miembro'};
+/* ===== 1 ===== */
+IMPL.pliderazgo[0]=plist({id:'l1',vacio:'Busca o agrega a la persona que vas a desarrollar.',suggest:()=>teamP().filter(p=>!dev(p.id)),
+ intro:()=>note('La persona elige su plan; tú no decides por ella. Si todavía no lo tiene claro, regístralo así.'),
+ init:(pid,d)=>{if(d.quiere===undefined){const v=dev(pid)||{};d.quiere=v.quiere||'';d.exp=v.exp||'';d.expTxt=v.expTxt||'';d.sit=v.sit||'';d.plan=v.plan||''}},
+ card:(pid,d)=>{const b='f/d/'+pid+'/';return`${lab('¿QUÉ QUIERE LOGRAR? (en sus palabras)')}${area(b+'quiere','',2)}${lab('EXPERIENCIA')}${chips(b+'exp',EXPS,d.exp)}${lab('DETALLE DE SU EXPERIENCIA (opcional)')}${inp(b+'expTxt','')}${lab('SITUACIÓN ACTUAL')}${area(b+'sit','Tiempo disponible, trabajo, apoyo en casa…',2)}${lab('PLAN QUE ELIGE LA PERSONA')}${chips(b+'plan',PLANES,d.plan)}`},
+ check:(pid,d)=>!(d.quiere||'').trim()?'anota lo que quiere lograr.':!d.exp?'elige su experiencia.':!(d.sit||'').trim()?'anota su situación actual.':!d.plan?'registra el plan que eligió la persona.':true,
+ commit:(pid,d,p)=>{toTeam(p);p.ult=D0();ensureDev(pid,{plan:d.plan,quiere:d.quiere.trim(),exp:d.exp,expTxt:d.expTxt||'',sit:d.sit.trim()});logSeg({id:'sg_l1_'+cyId()+'_'+pid,pid,tipo:'desarrollo',res:'Plan elegido: '+d.plan,src:'lider1'})},
+ summary:n=>n+' persona(s) en desarrollo'});
+/* ===== 2 ===== */
+IMPL.pliderazgo[1]=plist({id:'l2',vacio:'Elige a la persona con quien acuerdas su meta.',suggest:()=>devs().map(x=>PP(x.pid)).filter(Boolean),
+ init:(pid,d)=>{if(d.meta===undefined){const a=latestAcu(pid),v=dev(pid)||{};d.plan=(a&&a.plan)||v.plan||'';d.meta=a?a.meta:'';d.comp=a?JSON.parse(JSON.stringify(a.comp||[])):[];d.apoyo=a?a.apoyo:'';d.inc=a?incNames(a.inc):[];d.rev=a?a.rev:''}},
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/',comp=d.comp=d.comp||[],keys=Object.keys(C.inc||{}).map(k=>C.inc[k].n);
+  return`${lab('PLAN')}${chips(b+'plan',PLANES,d.plan)}${lab('META DE '+E(p.nombre.toUpperCase())+' (en sus palabras; la meta es suya)')}${area(b+'meta','',2)}
+  <h3>Compromisos medibles</h3>${comp.map((c,j)=>`<div class="c" style="margin-top:6px"><div class="row"><b>Compromiso ${j+1}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3delrow" data-v="${ATTR(b+'comp')}|${ATTR(c.id)}">Quitar</button></div>${lab('QUÉ HARÁ')}${inp(b+'comp/'+j+'/acc','Ej.: conversaciones nuevas')}${lab('CUÁNTO (medible)')}${inp(b+'comp/'+j+'/cant','Ej.: 5','number','inputmode="numeric" min="1"')}${lab('FECHA LÍMITE')}${inp(b+'comp/'+j+'/limite','','date')}</div>`).join('')}<button class="b sm s" data-a="p3addrow" data-v="${ATTR(b+'comp')}|">+ Agregar compromiso</button>
+  ${lab('APOYO DEL LÍDER')}${area(b+'apoyo','Qué harás tú para apoyarle',2)}
+  ${lab('METAS E INCENTIVOS RELACIONADOS (transversal; puede ser más de uno)')}${multi(b+'inc',Object.keys(C.inc||{}).map(k=>C.inc[k].n),d.inc)}
+  ${note('Reto 90: pendiente de configurar (no hay información oficial cargada en la app). El avance que captures aquí no es un resultado confirmado oficialmente por OMNILIFE.')}
+  ${lab('FECHA DE REVISIÓN')}${inp(b+'rev','','date')}`},
+ check:(pid,d)=>!d.plan?'registra el plan.':!(d.meta||'').trim()?'anota su meta.':!(d.comp||[]).length?'agrega al menos un compromiso medible.':(d.comp.some(c=>!(c.acc||'').trim()||!(parseFloat(c.cant)>0)||!c.limite)?'completa qué hará, cuánto y la fecha límite de cada compromiso.':!(d.apoyo||'').trim()?'anota tu apoyo.':!d.rev?'define la fecha de revisión.':true),
+ commit:(pid,d,p)=>{const keys=Object.keys(C.inc||{}),inc=(d.inc||[]).map(n=>keys.find(k=>C.inc[k].n===n)||n);const rec={pid,plan:d.plan,meta:d.meta.trim(),comp:JSON.parse(JSON.stringify(d.comp)),apoyo:d.apoyo.trim(),inc,rev:d.rev},prev=latestAcu(pid);
+  const same=prev&&JSON.stringify([prev.plan,prev.meta,prev.comp,prev.apoyo,prev.inc,prev.rev])===JSON.stringify([rec.plan,rec.meta,rec.comp,rec.apoyo,rec.inc,rec.rev]);
+  if(!same)up('acu',Object.assign({id:nid('ac'),fecha:D0(),at:Date.now(),cy:cyId()},rec));ensureDev(pid,{plan:d.plan});follow(p,d.rev,'Revisión de acuerdo');p.ult=D0()},
+ summary:n=>n+' acuerdo(s) guardados en el historial'});
+/* ===== 3 ===== */
+IMPL.pliderazgo[2]=plist({id:'l3',vacio:'Elige a la persona con quien practicaron.',suggest:()=>devs().map(x=>PP(x.pid)).filter(Boolean),
+ card:(pid,d)=>{const b='f/d/'+pid+'/',h=latestHab(pid);return`${Object.keys(h).length?`<div class="m"><b>Niveles actuales:</b> ${Object.values(h).map(x=>E(x.skill)+': '+E(x.nivel)).join(' · ')}</div>`:''}${lab('HABILIDAD QUE PRACTICARON')}${chips(b+'skill',SKILLS,d.skill)}${lab('EVIDENCIA O NOTA')}${area(b+'nota','Qué hizo o qué viste',2)}${lab('NIVEL')}${chips(b+'nivel',NIV,d.nivel)}`},
+ check:(pid,d)=>!d.skill?'elige la habilidad.':!(d.nota||'').trim()?'anota la evidencia o una nota.':!d.nivel?'elige el nivel.':true,
+ commit:(pid,d,p)=>{const prev=latestHab(pid)[d.skill];if(!(prev&&prev.nivel===d.nivel&&prev.nota===d.nota.trim()&&prev.fecha===D0()))up('hab',{id:nid('hb'),pid,skill:d.skill,nivel:d.nivel,nota:d.nota.trim(),fecha:D0(),at:Date.now(),cy:cyId()});ensureDev(pid,{});p.ult=D0();logSeg({id:'sg_l3_'+cyId()+'_'+pid+'_'+d.skill,pid,tipo:'habilidad',res:d.skill+': '+d.nivel,nota:d.nota.trim(),src:'lider3'})},
+ summary:n=>'Habilidades registradas de '+n+' persona(s)'});
+/* ===== 4 ===== */
+IMPL.pliderazgo[3]=plist({id:'l4',vacio:'Elige a la persona que vas a revisar.',suggest:()=>devs().map(x=>PP(x.pid)).filter(Boolean),
+ intro:()=>{const l=devs().map(x=>PP(x.pid)).filter(Boolean);return`<div class="c"><b>Personas que estoy desarrollando</b>${l.length?l.map(p=>`<div class="m">• ${E(p.nombre)}: próxima revisión ${p.fecha?fd(p.fecha):'sin fecha'}${p.sig?' ('+E(p.sig)+')':''}</div>`).join(''):'<div class="m">Aún no hay personas en desarrollo. Completa la actividad 1.</div>'}</div>`},
+ card:(pid,d,p)=>{const b='f/d/'+pid+'/',a=latestAcu(pid),h=latestHab(pid);d.cmp=d.cmp||{};
+  return`${a?`<div class="m"><b>Compromisos acordados</b> (${fd(a.fecha)})</div>${(a.comp||[]).map(c=>`<div class="c" style="margin-top:6px"><b>${E(c.acc)}</b> · ${E(c.cant)} · hasta ${fd(c.limite)}<div>${chips(b+'cmp/'+c.id,['Cumplido','Parcial','No cumplido'],d.cmp[c.id])}</div></div>`).join('')}`:note('Esta persona aún no tiene un acuerdo registrado (actividad 2). Puedes registrar la revisión igualmente.')}
+  ${lab('OBSTÁCULOS')}${area(b+'obst','',2)}${lab('APOYO NECESARIO')}${area(b+'apoyo','',2)}${Object.keys(h).length?`<div class="m"><b>Niveles por habilidad:</b> ${Object.values(h).map(x=>E(x.skill)+': '+E(x.nivel)).join(' · ')}</div>`:''}
+  ${lab('SIGUIENTE ACCIÓN CONCRETA')}${inp(b+'sig','Ej.: practicar una presentación')}${lab('FECHA')}${inp(b+'fecha','','date')}`},
+ check:(pid,d)=>{const a=latestAcu(pid);if(a&&(a.comp||[]).some(c=>!(d.cmp||{})[c.id]))return'marca el estado de cada compromiso.';if(!(d.sig||'').trim())return'define la siguiente acción concreta.';if(!d.fecha)return'define la fecha de la siguiente acción.';return true},
+ commit:(pid,d,p)=>{const a=latestAcu(pid);const res=a?(a.comp||[]).map(c=>c.acc+': '+(d.cmp[c.id]||'')).join(' · '):'Sin acuerdo previo';logSeg({id:'sg_l4_'+cyId()+'_'+pid,pid,tipo:'revisión',res,nota:[d.obst&&'Obstáculos: '+d.obst,d.apoyo&&'Apoyo: '+d.apoyo].filter(Boolean).join(' · '),prox:d.fecha,src:'lider4'});follow(p,d.fecha,d.sig.trim());ensureDev(pid,{});p.ult=D0()},
+ summary:n=>n+' revisión(es) con siguiente acción'});
+/* ===== 5 ===== */
+function tree(by,seen){const kids=devs().filter(x=>x.by===by&&!seen.has(x.pid));if(!kids.length)return'';return`<ul style="margin:2px 0 2px 14px;padding-left:12px">${kids.map(x=>{seen.add(x.pid);return`<li>${E(pname(x.pid))} <span class="m">${E(x.plan||'plan por definir')}</span>${tree(x.pid,seen)}</li>`}).join('')}</ul>`}
+const PR={Alta:0,Media:1,Baja:2};
+IMPL.pliderazgo[4]={
+ render:()=>{const t=teamP().sort((a,b)=>(PR[(dev(a.id)||{}).prio]??3)-(PR[(dev(b.id)||{}).prio]??3));
+  if(!t.length)return note('Aún no hay personas en tu equipo. Completa antes las actividades 1–4.','warn');
+  return`${t.map(p=>{const v=dev(p.id)||{},a=latestAcu(p.id);return`<div class="c"><div class="row"><b>${E(p.nombre)}</b> <span class="tag">${E(v.plan||'plan por definir')}</span></div><div class="m">Meta: ${a?E(a.meta):'sin acuerdo'}<br>Metas/incentivos: ${a&&(a.inc||[]).length?E(incNames(a.inc).join(', ')):'—'}<br>Independencia: ${E(indep(p.id))}<br>Próximo seguimiento: ${p.fecha?fd(p.fecha)+(p.sig?' · '+E(p.sig):''):'sin fecha'}</div>${lab('PRIORIDAD DE APOYO')}${['Alta','Media','Baja'].map(o=>`<button class="ch ${v.prio===o?'on':''}" aria-pressed="${v.prio===o}" data-a="p3prio" data-v="${ATTR(p.id)}|${o}">${o}</button>`).join('')}</div>`}).join('')}
+  <div class="c"><h3>Árbol de tu equipo</h3><div><b>Yo</b>${tree('yo',new Set())||'<div class="m">Sin personas aún.</div>'}</div></div>`},
+ check:()=>{const t=teamP();if(!t.length)return'Aún no hay personas en tu equipo.';return t.some(p=>(dev(p.id)||{}).prio)?true:'Marca la prioridad de apoyo de al menos una persona.'},
+ commit:()=>{const t=teamP();return t.length+' persona(s) en tu equipo · '+t.filter(p=>(dev(p.id)||{}).prio).length+' con prioridad'}};
+/* ===== 6 ===== */
+const wouldLoop=(x,child)=>{let c=x,n=0;while(c&&c!=='yo'&&n++<50){if(c===child)return true;c=(dev(c)||{}).by}return false};
+IMPL.pliderazgo[5]={
+ render:()=>{const f=F(),ready=teamP().filter(p=>maxLvl(p.id)>=3);
+  return`${note('Personas con nivel «Ya puede hacerlo solo» o más en alguna habilidad aparecen como preparadas. La persona elegida decide a quién acompañará.')}
+  <div class="c"><b>1. ¿Quién está preparado para desarrollar a alguien?</b>${f.leader?`<div class="m">Elegida: <b>${E(pname(f.leader))}</b></div>`:''}<div>${ready.map(p=>`<button class="ch ${f.leader===p.id?'on':''}" data-a="p3pick" data-v="set:f/leader|${ATTR(p.id)}">${E(p.nombre)} · ${E(indep(p.id))}</button>`).join('')||note('Todavía nadie alcanza ese nivel; puedes elegir a otra persona de tu equipo.')}</div>${pick('l6a','set:f/leader','Miembro del equipo',sugBtns(teamP().filter(p=>!ready.includes(p)),'set:f/leader'))}</div>
+  ${f.leader?`<div class="c"><b>2. ¿A quién acompañará ${E(pname(f.leader))}?</b>${f.child?`<div class="m">Elegida por ${E(pname(f.leader))}: <b>${E(pname(f.child))}</b></div>`:''}${pick('l6b','set:f/child','Miembro del equipo','')}${f.child?`<button class="b" data-a="p3link">Registrar este acompañamiento</button>`:''}${err(S.tmp.p3lerr)}</div>`:''}
+  <div class="c"><h3>Duplicación</h3><div><b>Yo</b>${tree('yo',new Set())||'<div class="m">Sin personas aún.</div>'}</div><div class="m">Personas que desarrollo directamente: ${devs().filter(x=>x.by==='yo').length} · desarrolladas por mis líderes: ${devs().filter(x=>x.by!=='yo').length}</div></div>
+  ${devs().filter(x=>x.by!=='yo').map(x=>`<div class="c"><b>${E(pname(x.pid))}</b> <span class="m">acompañado por ${E(pname(x.by))}</span><div class="m">Mismos pasos que 1–4, con registros únicos de esta persona:</div><div class="row2"><button class="b sm s" style="margin:0" data-a="p3goto" data-v="1|${ATTR(x.pid)}">Acuerdo (act. 2)</button><button class="b sm s" style="margin:0" data-a="p3goto" data-v="2|${ATTR(x.pid)}">Habilidad (act. 3)</button><button class="b sm s" style="margin:0" data-a="p3goto" data-v="3|${ATTR(x.pid)}">Revisión (act. 4)</button></div></div>`).join('')}`},
+ check:()=>devs().some(x=>x.by!=='yo')?true:'Registra al menos un acompañamiento: la persona preparada elige a quién acompañará.',
+ commit:()=>{const n=devs().filter(x=>x.by!=='yo').length;return n+' acompañamiento(s) de nuevos líderes registrados'}};
+/* ===== 7 ===== */
+const logrosDe=pid=>{const lim=addDays(D0(),-30),o=[];R('seg').filter(s=>s.pid===pid&&s.fecha>=lim&&s.tipo==='revisión'&&/Cumplido/.test(s.res||'')).forEach(s=>o.push('cumplió: '+(s.res||'').split(' · ').filter(x=>/Cumplido$/.test(x)).map(x=>x.replace(/: Cumplido$/,'')).join(', ')));R('hab').filter(h=>h.pid===pid&&h.fecha>=lim&&lvl(h)>=3).forEach(h=>o.push('ya puede '+h.skill.toLowerCase()+' ('+h.nivel.toLowerCase()+')'));R('compras').filter(c=>c.pid===pid&&c.fecha>=lim).forEach(c=>o.push('registró una compra de '+c.prod));return Array.from(new Set(o))};
+const REC_T=(n,l)=>'Muy bien, '+n+'. Vi que '+l+'. Esa constancia es lo que queremos repetir. Gracias.';
+const RECON_T=n=>'Hola '+n+', ¿cómo has estado? Me acordé de ti y quería saber cómo vas. Si te late, retomamos cuando tú quieras.';
+const sinContacto=()=>S.people.filter(p=>p.estado!='No interesado'&&((p.ult&&diffDays(p.ult,D0())>=14)||p.estado=='Más adelante'||(p.fecha&&p.fecha<D0()))).slice(0,10);
+IMPL.pliderazgo[6]={
+ render:()=>{const f=F(),t=teamP(),ru=f.ru||{},rc=f.rc||{},rr=f.rr||{};
+  const lg=rc.pid?logrosDe(rc.pid):[];
+  return`<h3>Reunión</h3>${lab('FECHA')}${inp('f/ru/fecha','','date')}${lab('TEMA')}${inp('f/ru/tema','Ej.: Reunión semanal de equipo')}${lab('ASISTENTES')}${t.length?multiP('f/ru/asist',t,ru.asist):note('Aún no hay personas en tu equipo.')}${lab('ACUERDOS')}${area('f/ru/acu','',2)}${lab('PRÓXIMA ACCIÓN')}${inp('f/ru/prox','')}${lab('FECHA DE LA PRÓXIMA ACCIÓN')}${inp('f/ru/proxF','','date')}<button class="b sm s" data-a="p3reu">Guardar reunión</button>${f.nreu?note('Reuniones guardadas en esta actividad: '+f.nreu):''}
+  <h3 style="margin-top:14px">Reconocimiento</h3>${lab('¿A QUIÉN?')}${chips('f/rc/pid',t.map(p=>[p.id,p.nombre]),rc.pid)}
+  ${rc.pid?`${lab('LOGRO REAL (de tus registros de los últimos 30 días)')}${lg.length?chips('f/rc/logro',lg,rc.logro):note('No hay logros registrados para esta persona en los últimos 30 días. Puedes escribir uno que tú confirmaste.')}${lab('O ESCRIBE UN LOGRO QUE TÚ CONFIRMASTE')}${inp('f/rc/otro','Ej.: hizo sus 5 seguimientos')}<button class="b sm s" data-a="p3recgen">Armar mensaje</button>`:''}
+  ${rc.msg!=null?`${lab('MENSAJE (editable)')}${area('f/rc/msg','',3)}<div class="row2"><button class="b sm s" style="margin:0" data-a="p3reccp">Copiar</button><button class="b sm s" style="margin:0" data-a="p3recwa">WhatsApp</button><button class="b sm" style="margin:0" data-a="p3recsave">Guardar reconocimiento</button></div>`:''}${f.nrec?note('Reconocimientos guardados: '+f.nrec):''}
+  <h3 style="margin-top:14px">Retomar contacto</h3>${note('Personas con las que no has hablado recientemente. Es solo una sugerencia para reconectar con respeto.')}${sinContacto().map(p=>`<button class="ch ${rr.pid===p.id?'on':''}" data-a="p3c" data-v="f/rr/pid|${ATTR(p.id)}">${E(p.nombre)}</button>`).join('')||note('No hay sugerencias por ahora.')}
+  ${rr.pid?`${lab('MENSAJE (editable)')}${area('f/rr/msg',RECON_T(pname(rr.pid)),3)}<div class="row2"><button class="b sm s" style="margin:0" data-a="p3rrcp">Copiar</button><button class="b sm" style="margin:0" data-a="p3rrsave">Registrar reconexión</button></div>`:''}${f.nrr?note('Reconexiones registradas: '+f.nrr):''}`},
+ check:()=>{const f=F();return(f.nreu||f.nrec||f.nrr)?true:'Guarda al menos una reunión, un reconocimiento o una reconexión.'},
+ commit:()=>{const f=F();return[f.nreu&&f.nreu+' reunión(es)',f.nrec&&f.nrec+' reconocimiento(s)',f.nrr&&f.nrr+' reconexión(es)'].filter(Boolean).join(' · ')}};
+/* ===== 8 ===== */
+const win=()=>({ini:addDays(D0(),-30),fin:D0()});
+function resumen30(){const w=win(),inw=x=>x.fecha>=w.ini&&x.fecha<=w.fin;
+ return{rev:R('seg').filter(s=>s.tipo==='revisión'&&inw(s)).length,acu:R('acu').filter(inw).length,hab:R('hab').filter(inw).length,rec:R('rec').filter(inw).length,reu:R('reu').filter(inw).length,per:devs().length,
+  porPersona:devs().map(x=>{const hs=R('hab').filter(h=>h.pid===x.pid&&inw(h)).sort((a,b)=>(a.at||0)-(b.at||0));const first=hs.length?hs[0]:null,last=hs.length?hs[hs.length-1]:null;return{pid:x.pid,n:hs.length,desde:first?first.nivel:'—',hasta:last?last.nivel:'—'}})}}
+const incAct=()=>{try{return Object.keys(C.inc||{}).filter(k=>S.inc&&S.inc.act&&S.inc.act[k])}catch(e){return[]}};
+IMPL.pliderazgo[7]={
+ render:()=>{const f=F(),s=resumen30(),ev=f.ev=f.ev||{},ac=ev.acc=ev.acc||[],ia=incAct();
+  return`<div class="c"><h3>Tus últimos 30 días (datos reales)</h3><div class="m">Revisiones 1 a 1: <b>${s.rev}</b> · Acuerdos: <b>${s.acu}</b> · Habilidades registradas: <b>${s.hab}</b> · Reconocimientos: <b>${s.rec}</b> · Reuniones: <b>${s.reu}</b> · Personas en desarrollo: <b>${s.per}</b></div>
+  ${s.porPersona.length?`<h3>Evolución por persona</h3>${s.porPersona.map(x=>`<div class="m">• ${E(pname(x.pid))}: ${x.n?x.n+' registro(s) de habilidad · '+E(x.desde)+' → '+E(x.hasta):'sin registros de habilidad en el periodo'}</div>`).join('')}`:''}</div>
+  <h3>Autoevaluación</h3>${DIMS.map((d,i)=>`<div class="c" style="margin-top:6px"><b>${E(d)}</b><div>${chips('f/ev/sc/'+i,[1,2,3,4,5].map(n=>[String(n),String(n)]),(ev.sc||{})[i])}</div></div>`).join('')}${note('1 = por mejorar · 5 = lo hago muy bien.')}
+  ${lab('PRIORIDAD PARA EL SIGUIENTE PERIODO')}${area('f/ev/prio','',2)}
+  <h3>Acciones</h3>${ac.map((a,j)=>`<div class="c" style="margin-top:6px"><div class="row"><b>Acción ${j+1}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3delrow" data-v="f/ev/acc|${ATTR(a.id)}">Quitar</button></div>${lab('QUÉ HARÉ')}${inp('f/ev/acc/'+j+'/acc','')}${lab('FECHA')}${inp('f/ev/acc/'+j+'/fecha','','date')}</div>`).join('')}<button class="b sm s" data-a="p3addrow" data-v="f/ev/acc|">+ Agregar acción</button>
+  <div class="c" style="margin-top:10px"><h3>Metas e incentivos (transversal)</h3>${ia.length?ia.map(k=>`<div class="m">• ${E(C.inc[k].n)} · ${E(C.inc[k].premio||'')} — activo en la app</div>`).join(''):'<div class="m">No tienes incentivos activos en la app.</div>'}${note('El avance de la app es capturado por ti; el resultado oficial lo confirma OMNILIFE. Reto 90: pendiente de configurar, faltan sus requisitos oficiales.')}</div>`},
+ check:()=>{const ev=F().ev||{};if(DIMS.some((_,i)=>!(ev.sc||{})[i]))return'Completa la autoevaluación (las 5 áreas).';if(!(ev.prio||'').trim())return'Define una prioridad para el siguiente periodo.';const ac=ev.acc||[];if(!ac.length||ac.some(a=>!(a.acc||'').trim()||!a.fecha))return'Agrega al menos una acción con su fecha.';return true},
+ commit:()=>{const ev=F().ev,s=resumen30(),w=win();up('ev',{id:'ev_'+cyId()+'_'+D0(),fecha:D0(),ini:w.ini,fin:w.fin,sc:JSON.parse(JSON.stringify(ev.sc)),prio:ev.prio.trim(),acc:JSON.parse(JSON.stringify(ev.acc)),snap:{rev:s.rev,acu:s.acu,hab:s.hab,rec:s.rec,reu:s.reu,per:s.per},at:Date.now(),cy:cyId()});return'Evaluación del '+fd(D0())+' · prioridad: '+ev.prio.trim().slice(0,60)}};
+Object.assign(P3,{devs,dev,teamP,latestHab,latestAcu,resumen30,incNames,NIV});
+Object.assign(A,{
+p3prio(e,v){const[pid,o]=v.split('|');const d=dev(pid)||{id:'dv_'+pid,pid,by:'yo',plan:'',since:D0()};d.prio=d.prio===o?'':o;up('dev',d)},
+p3link(){const f=F(),x=f.leader,c=f.child;S.tmp.p3lerr='';if(!x||!c)return;if(x===c){S.tmp.p3lerr='La persona no puede acompañarse a sí misma.';return}
+ const d=dev(c);if(d&&d.by!=='yo'&&d.by!==x){S.tmp.p3lerr=pname(c)+' ya es acompañada por '+pname(d.by)+'.';return}
+ if(wouldLoop(x,c)){S.tmp.p3lerr='Eso crearía un ciclo en el árbol del equipo.';return}
+ if(!dev(x))ensureDev(x,{});toTeam(PP(c));ensureDev(c,{by:x});logSeg({id:'sg_l6_'+cyId()+'_'+x+'_'+c,pid:c,tipo:'desarrollo',res:'Acompañada por '+pname(x),src:'lider6'});f.child='';toast('Acompañamiento registrado.')},
+p3goto(e,v){const[i,pid]=v.split('|'),n=+i;S.open=n;const f=F(n);f.ppl=f.ppl||[];if(!f.ppl.includes(pid))f.ppl.push(pid)},
+p3reu(){const f=F(),r=f.ru||{};if(!r.fecha||!(r.tema||'').trim())return toast('Anota la fecha y el tema de la reunión.');up('reu',{id:nid('ru'),fecha:r.fecha,tema:r.tema.trim(),asist:(r.asist||[]).slice(),acu:r.acu||'',prox:r.prox||'',proxF:r.proxF||'',cy:cyId()});if(r.prox&&r.proxF)logSeg({id:'sg_l7_'+nid('r'),pid:'yo',tipo:'reunión',res:r.tema.trim(),prox:r.proxF,nota:r.prox,src:'lider7'});f.nreu=(f.nreu||0)+1;f.ru={};toast('Reunión guardada.')},
+p3recgen(){const f=F(),r=f.rc||{};const l=(r.otro||'').trim()||r.logro;if(!r.pid||!l)return toast('Elige un logro real o escribe uno que confirmaste.');r.msg=REC_T(pname(r.pid).split(' ')[0],l);f.rc=r},
+p3reccp(){const m=(F().rc||{}).msg;if(m)copyTxt(m)},p3recwa(){const m=(F().rc||{}).msg;if(m)wa(m)},
+p3recsave(){const f=F(),r=f.rc||{};if(!r.pid||!(r.msg||'').trim())return;up('rec',{id:nid('rc'),pid:r.pid,logro:(r.otro||'').trim()||r.logro||'',msg:r.msg.trim(),fecha:D0(),cy:cyId()});logSeg({id:'sg_l7r_'+nid('r'),pid:r.pid,tipo:'reconocimiento',res:(r.otro||'').trim()||r.logro||'',src:'lider7'});f.nrec=(f.nrec||0)+1;f.rc={};toast('Reconocimiento guardado.')},
+p3rrcp(){const r=F().rr||{};const m=r.msg||RECON_T(pname(r.pid));copyTxt(m)},
+p3rrsave(){const f=F(),r=f.rr||{};if(!r.pid)return;const p=PP(r.pid);logSeg({id:'sg_l7c_'+nid('r'),pid:r.pid,tipo:'reconexión',res:'Mensaje de reconexión',nota:r.msg||RECON_T(pname(r.pid)),src:'lider7'});if(p)p.ult=D0();f.nrr=(f.nrr||0)+1;f.rr={};toast('Reconexión registrada.')}});
+})();
+
+/* ----- pantallas comunes de los tres planes, manejadores y vistas de historial ----- */
+(()=>{
+const {IMPL,F,Fr,FG,getv,setv,ATTR,nid,D0,fd,R,PP,pname,pick,pickRes,applyTarget,ensureP,findDup,isO,is,nrm,dg,copyTxt}=P3;
+const _paso=paso;
+paso=function(i){if(!P3.is(S.r))return _paso(i);return page(i)};
+function page(i){const a=steps(),s=a[i],dn=done(i),impl=(IMPL[S.r]||[])[i];
+ const hd=`<button class="b t sm" data-a="cerrar">← Volver</button><div class="m" style="margin-top:8px">ACTIVIDAD ${i+1} DE ${a.length} · ${E(s.gold||'')} · <b>${stLabel(i,cur())}</b></div><h1>${E(s.t)}</h1><div class="c"><h3>Qué vas a hacer</h3>${E(s.what)}<details><summary>Cómo hacerlo y ejemplo</summary>${E(s.how)}<br><i>${E(s.ex)}</i></details></div>`;
+ const ft=`<button class="b t sm" data-a="obj">Tengo una objeción</button><button class="b t sm" data-a="apoyo">Necesito apoyo</button>`;
+ if(!impl)return hd+`<div class="c"><div class="m">Esta actividad no está disponible.</div></div>`+ft;
+ let body,v;try{body=impl.render();v=impl.check()}catch(e){window.__p3err=(window.__p3err||[]).concat(String(e&&e.stack||e));body=`<div class="c"><div class="m" role="alert">No se pudo mostrar esta actividad. Tus datos no se tocaron.</div></div>`;v='Esta actividad no se pudo mostrar.'}
+ const status=dn?`<div class="c">✓ Hecho: ${E(S.res[key(i)].r)}</div>`:'';
+ return hd+status+body+`<button class="b s" data-a="p3save">Guardar avance</button><div id="p3act" data-i="${i}">${actHtml(i,v,dn)}</div><button class="b t" data-a="p3save">Guardar y continuar después</button>`+ft}
+const actHtml=(i,v,dn)=>v===true?`<button class="b g" data-a="p3done" data-v="${i}">${dn?'Actualizar resultado':'Marcar como hecho'}</button>`:`<p class="m" role="status">${E(v)}</p>`;
+/* al escribir en un campo, se actualiza solo la zona del botón (sin volver a dibujar y sin perder el foco) */
+function refreshAct(){const el=document.getElementById('p3act');if(!el||!P3.is(S.r))return;const i=+el.dataset.i,impl=(IMPL[S.r]||[])[i];if(!impl)return;let v;try{v=impl.check()}catch(e){v='Esta actividad no se pudo comprobar.'}el.innerHTML=actHtml(i,v,done(i))}
+/* ----- historial de un ciclo de los planes nuevos (solo lectura) ----- */
+const lbl={ppl:'Personas',rel:'Relación',ctx:'Contexto',int:'Interés',est:'Estado',start:'Comenzar',canal:'Canal',res:'Resultado',guion:'Guion',prox:'Siguiente contacto',nota:'Nota',busca:'Busca',prods:'Productos de interés',dijo:'Dijo',nec:'Necesidad',prod:'Producto',carac:'Características',uso:'Uso',precio:'Precio',cierre:'Pregunta de cierre',dec:'Decisión',como:'Cómo le va',dudas:'Dudas',acomp:'Acompañamiento',sat:'Satisfacción',cont:'Continuidad',ref:'Referidos',socio:'Información de socio',quiere:'Quiere lograr',exp:'Experiencia',expTxt:'Detalle',sit:'Situación',plan:'Plan',meta:'Meta',apoyo:'Apoyo',rev:'Revisión',skill:'Habilidad',nivel:'Nivel',obst:'Obstáculos',sig:'Siguiente acción',fecha:'Fecha',modo:'Modo',sel:'Persona'};
+function flat(v,depth){if(v==null||v==='')return'';if(Array.isArray(v)){if(!v.length)return'';if(v.every(x=>typeof x!='object'))return v.map(x=>String(x).length>20&&PP(x)?pname(x):String(x)).map(E).join(', ');return v.map(x=>flat(x,depth+1)).filter(Boolean).join(' | ')}
+ if(typeof v=='object'){return Object.keys(v).filter(k=>k!='id'&&k!='pid').map(k=>{const t=flat(v[k],depth+1);return t?E(lbl[k]||k)+': '+t:''}).filter(Boolean).join('; ')}
+ const s=String(v);return E(PP(s)&&s.length>3?pname(s):s)}
+function rows(r,d,fdf){const st=(C.routes[r]||{}).steps||[],res=d.res||{},g=d.g||{};
+ return st.map((s,i)=>{const k=r+i,x=res[k],f=(g[k]&&g[k].d&&g[k].d.f)||{},has=Object.keys(f).length;
+  const dt=Object.keys(f).filter(q=>!['rec'].includes(q)).map(q=>{if(q==='d'&&isO(f.d))return Object.keys(f.d).map(pid=>`<div class="li"><span style="flex:1"><b>${E(pname(pid))}</b><br><span class="m">${flat(f.d[pid],0)||'—'}</span></span></div>`).join('');const t=flat(f[q],0);return t?`<div class="li"><span style="flex:1"><b>${E(lbl[q]||q)}:</b> ${t}</span></div>`:''}).join('');
+  const rec=f.rec&&P3.recOf?P3.bwRows(P3.recOf(f.rec)):'';
+  return`<details><summary>${i+1}. ${E(s.t)}<span class="m">${x?'✓ Completada':has?'En proceso':'Pendiente'}</span></summary>${x?`<div class="li"><span style="flex:1"><b>Resultado:</b> ${E(x.r)}<br><span class="m">${(fdf||fd)(x.f)}</span></span></div>`:''}${dt}${rec}${!x&&!has?'<div class="m" style="padding:6px 2px">Sin información en esta actividad.</div>':''}</details>`}).join('')}
+/* ----- Personas: historial de compras, seguimientos y bienestar de la MISMA persona ----- */
+function histP(p){if(!p||!p.id)return'';const c=R('compras').filter(x=>x.pid===p.id).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))),s=R('seg').filter(x=>x.pid===p.id).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).slice(0,6),b=R('bien').filter(x=>x.owner===p.id),dv=R('dev').find(x=>x.pid===p.id);
+ if(!c.length&&!s.length&&!b.length&&!dv)return'';
+ return`<details open><summary>Compras y seguimientos de esta persona</summary>${dv?`<div class="m">En desarrollo · plan: ${E(dv.plan||'por definir')}${dv.by&&dv.by!=='yo'?' · acompañada por '+E(pname(dv.by)):''}</div>`:''}${c.map(x=>`<div class="li"><span style="flex:1">${E(x.prod)} ×${E(x.cant)} · $${E(x.precio)}<br><span class="m">${fd(x.fecha)} · ${E(x.src||'')}</span></span></div>`).join('')}${s.map(x=>`<div class="li"><span style="flex:1"><b>${E(x.tipo||'')}</b> ${E(x.res||'')}<br><span class="m">${fd(x.fecha)}${x.prox?' · próximo: '+fd(x.prox):''}</span></span></div>`).join('')}${b.length?`<div class="m">Bienestar registrado para esta persona: ${b.length}</div><button class="b sm s" data-a="p3bw" data-v="${ATTR(p.id)}">Abrir Bienestar</button>`:''}</details>`}
+const _formP=formP;
+formP=function(i){return _formP(i)+(i>=0?histP(S.people[i]):'')};
+/* ----- manejadores ----- */
+Object.assign(A,{
+p3c(e,v){const k=v.indexOf('|'),path=v.slice(0,k),val=v.slice(k+1);setv(path,getv(path)===val?'':val)},
+p3m(e,v){const q=v.split('|'),path=q[0],val=q[1],max=+q[2]||0;const a=(getv(path)||[]).slice(),i=a.indexOf(val);if(i>=0)a.splice(i,1);else{if(max&&a.length>=max)return toast('Máximo '+max+' elementos.');a.push(val)}setv(path,a)},
+p3rm(e,v){const k=v.indexOf('|'),path=v.slice(0,k),pid=v.slice(k+1);setv(path,(getv(path)||[]).filter(x=>x!==pid))},
+p3pick(e,v){const k=v.indexOf('|'),t=v.slice(0,k),pid=v.slice(k+1);applyTarget(t,pid);toast('Seleccionada: '+pname(pid))},
+p3newp(e,v){const q=v.split('|'),id=q[0],target=q[1],tipo=q[2],name=((S.tmp.p3q||{})[id]||'').trim(),tel=(S.tmp.p3t||{})[id]||'';if(name.length<2)return toast('Escribe el nombre de la persona.');
+ const x=ensureP(name,tel,tipo||undefined);applyTarget(target,x.p.id);S.tmp.p3q[id]='';if(S.tmp.p3t)S.tmp.p3t[id]='';toast(x.created?'Persona nueva creada: '+x.p.nombre:'Ya existía en Personas: se seleccionó a '+x.p.nombre+' (sin duplicar).')},
+p3addrow(e,v){const k=v.indexOf('|'),path=v.slice(0,k);const a=(getv(path)||[]).slice();const last=path.split('/').pop();const row={id:nid('r')};if(last==='buy'){const pid=path.split('/')[2],d=F().d&&F().d[pid]||{};row.prod=d.prod||'';row.cant='1';row.precio='';row.fecha=D0()}a.push(row);setv(path,a)},
+p3delrow(e,v){const k=v.indexOf('|'),path=v.slice(0,k),id=v.slice(k+1);setv(path,(getv(path)||[]).filter(x=>x.id!==id))},
+p3guion(e,v){const[pid,i]=v.split('|'),s=(C.scripts||[])[+i];if(!s)return;setv('f/d/'+pid+'/guion',s[3].replace(/[“”]/g,'').replace(/Ana|Sofi|Luis|Carmen/g,pname(pid).split(' ')[0]))},
+p3cpd(e,pid){const g=getv('f/d/'+pid+'/guion');if(g)copyTxt(g);else toast('Primero elige o escribe un mensaje.')},
+p3save(){S.open=null;S.tmp.showErr=false;toast('Avance guardado.')},
+p3done(e,v){const i=+v,impl=(IMPL[S.r]||[])[i];if(!impl)return;const c=impl.check();if(c!==true)return toast(String(c));
+ const r=impl.commit();S.res[key(i)]={r:String(r),f:today(),g:1};if(S.r==='pbienestar'&&i===5){const rec=P3.planRec();if(rec){rec.done[5]=true;S.res[key(4)]={r:String(P3.bwSec[5].m(rec)),f:today(),g:1}}}S.open=null;S.tab='inicio';S.tmp.showErr=false;
+ try{if(S.r==='pbienestar'&&i===5){const rec=P3.planRec();if(rec&&rec.cierre&&rec.cierre.decision==='Continuar otro ciclo')setTimeout(()=>{try{CY.askNew(6)}catch(x){}},0)}}catch(x){}}});
+/* ----- campos de texto: se guardan al escribir, sin volver a dibujar la pantalla ----- */
+let tm=null;
+document.addEventListener('input',e=>{const t=e.target,d=t.dataset;if(!d)return;
+ if(d.p3!=null){setv(d.p3,t.value);const o=document.querySelector('[data-p3out="imc"]');if(o&&/\/ini\/(peso|est)$/.test(d.p3)){const rr=P3.resolve(d.p3);const v=rr?P3.imc(rr.o.ini||rr.o):null;o.textContent=v?v+' · '+(v<18.5?'por debajo del rango general':v<25?'dentro del rango general':v<30?'por encima del rango general':'muy por encima del rango general'):'—'}clearTimeout(tm);tm=setTimeout(()=>{try{save()}catch(x){}},500);refreshAct()}
+ else if(d.p3q!=null){const[id,target,tipo]=d.p3q.split('|');(S.tmp.p3q=S.tmp.p3q||{})[id]=t.value;const el=document.getElementById('p3r_'+id);if(el)el.innerHTML=pickRes(id,target,tipo)}
+ else if(d.p3t!=null){(S.tmp.p3t=S.tmp.p3t||{})[d.p3t]=t.value;const q=document.querySelector('[data-p3q^="'+d.p3t+'|"]'),el=document.getElementById('p3r_'+d.p3t);if(q&&el){const[id,target,tipo]=q.dataset.p3q.split('|');el.innerHTML=pickRes(id,target,tipo)}}});
+document.addEventListener('change',e=>{const t=e.target,d=t.dataset;if(d&&d.p3day!=null){(S.tmp.bwd=S.tmp.bwd||{})[d.p3day]=t.value;render()}});
+Object.assign(P3,{rows,histP,flat,page});
+})();
+
 /* ===== CAMBIAR MI PLAN: CICLOS DE PLAN (build planes-1) =====
    Cada plan que empiezas es un ciclo independiente (id propio). Solo uno está activo.
    Los datos del ciclo ACTIVO viven donde siempre (S.res, S.acts, S.g, S.bien) para no tocar el resto de la app;
@@ -1085,13 +1713,17 @@ window.BK=BK;
    los datos "vivos". Personas, seguimientos, liderazgo, juntas e incentivos NO pertenecen a ningún ciclo. */
 const CY=(()=>{
 const isO=x=>!!x&&typeof x=='object'&&!Array.isArray(x),clone=x=>JSON.parse(JSON.stringify(x===undefined?null:x));
-const OBJ=C.diag[0],RT=[['venta'],['c4x30'],['l4x30'],['mixto',false],['mixto',true],['bienestar']];
+const LEG=['Vender','Construir equipo','Liderar el equipo que ya tengo','Vender y construir equipo','Vender y liderar mi equipo','Bienestar y consumo personal'];
+const NEWP=['Bienestar — Usa, conoce y comparte','Ventas — Presenta, vende y fideliza','Liderazgo y Equipo — Desarrolla, acompaña y lidera'];
+/* índices 0-5: planes de la versión anterior (solo historial); 6-8: los tres planes vigentes */
+const OBJ=LEG.concat(NEWP),RT=[['venta'],['c4x30'],['l4x30'],['mixto',false],['mixto',true],['bienestar'],['pbienestar'],['pventas'],['pliderazgo']];
+const isNew=r=>r==='pbienestar'||r==='pventas'||r==='pliderazgo';
 const LIM_WARN=700000,LIM_MAX=900000;
 let msg=null,err='';
 const canon=x=>{if(Array.isArray(x))return'['+x.map(canon).join(',')+']';if(isO(x))return'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+canon(x[k])).join(',')+'}';return JSON.stringify(x===undefined?null:x)};
 const h32=s=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return(h>>>0).toString(36)};
 const stepsOf=(r,team)=>r=='mixto'?[...C.routes.venta.steps,...C.routes[team?'l4x30':'c4x30'].steps]:((C.routes[r]||{}).steps||[]);
-const goalOf=(r,team)=>r=='venta'?0:r=='c4x30'?1:r=='l4x30'?2:r=='mixto'?(team?4:3):r=='bienestar'?5:-1;
+const goalOf=(r,team)=>r=='venta'?0:r=='c4x30'?1:r=='l4x30'?2:r=='mixto'?(team?4:3):r=='bienestar'?5:r=='pbienestar'?6:r=='pventas'?7:r=='pliderazgo'?8:-1;
 const rutaName=(r,team)=>r=='mixto'?'MIXTO 30 · Ventas + '+(team?'Liderazgo':'Construcción'):((C.routes[r]||{}).name||String(r));
 function cst(res,r,team){const n=stepsOf(r,team).length;let d=0,last='';for(let i=0;i<n;i++){const x=res&&res[r+i];if(x){d++;if(x.f&&String(x.f)>last)last=String(x.f)}}return{total:n,done:d,pct:n?Math.round(d/n*100):0,last}}
 const today=()=>new Date().toISOString().slice(0,10);
@@ -1170,7 +1802,7 @@ try{
  cur.status=m.pct>=100?'completado':'pausado';cur.end=cur.status=='completado'?today():'';
  let tgt;
  if(kind=='new'){const g=+arg,rt=RT[g];if(!rt)throw new Error('goal');
-  const team=g==3?false:(g==4||g==2)?true:!!S.team,r=rt[0],n=S.cy.items.filter(x=>x.goal===g).length+1;
+  const team=g==3?false:(g==4||g==2||g==8)?true:(g==6||g==7)?false:!!S.team,r=rt[0],n=S.cy.items.filter(x=>x.goal===g).length+1;
   const id=nid();tgt={id,cn:id,n,goal:g,plan:OBJ[g],r,team,ruta:rutaName(r,team),start:today(),end:'',status:'activo',total:stepsOf(r,team).length,done:0,pct:0,last:'',at:Date.now()};
   S.cy.items.push(tgt);setLive({})}
  else{tgt=find(arg);if(!tgt||tgt.id===cur.id)throw new Error('target');if(!tgt.data)return restore(pre),{ok:false,msg:'No encontré los datos guardados de ese plan, así que no cambié nada.'};
@@ -1247,13 +1879,13 @@ const n=S.cy.items.filter(x=>x.id!==S.cy.active).length,big=size()>LIM_WARN;
 return`<div class="row2" style="margin:0 0 10px"><button class="b sm s" style="margin:0" data-a="cyChange">Cambiar mi plan</button><button class="b sm t" style="margin:0" data-a="cyList">Mis planes anteriores${n?' ('+n+')':''}</button></div>${msg?`<div class="c" role="status" style="${msg.k=='ok'?'border-color:var(--ac)':'border-color:var(--or,var(--ac))'}"><div class="m">${E(msg.t)}</div></div>`:''}${big?`<div class="c"><div class="m" style="color:var(--ort)">⚠ Tu historial de planes ya es grande. Exporta un respaldo pronto (Perfil › Respaldo de mis datos).</div></div>`:''}`}
 function chip(){const it=S.cy&&S.cy.verified&&find(S.cy.active);if(!it)return'';return mine(it.goal).length>1?` <span class="tag">Ciclo ${it.n||1}</span>`:''}
 function pickV(){const cur=S.cy&&find(S.cy.active);
-return`${bk()}<h1>Cambiar mi plan</h1><p class="m">Elige tu nuevo objetivo. Tu plan actual se guarda con todo su avance y tus contactos no cambian.</p>${OBJ.map((n,i)=>{const r=RT[i],team=i==3?false:(i==4||i==2)?true:false,k=mine(i).length,isCur=cur&&cur.goal===i;
-return`<div class="c"><div class="row" style="align-items:flex-start"><div style="flex:1"><b>${E(n)}</b>${isCur?' <span class="tag">Plan actual</span>':''}<div class="m">${E(rutaName(r[0],r.length>1?r[1]:team))}${k?' · '+k+(k==1?' plan guardado':' planes guardados'):''}</div></div><button class="b sm${isCur?' s':''}" style="margin:0" data-a="cyPick" data-v="${i}">Elegir</button></div></div>`}).join('')}`}
+return`${bk()}<h1>Cambiar mi plan</h1><p class="m">${S.tmp.cyrep?'Repetir ciclo: elige con qué plan quieres empezar un ciclo nuevo. Tu ciclo anterior queda intacto como completado.':'Elige tu nuevo objetivo. Tu plan actual se guarda con todo su avance y tus contactos no cambian.'} Son tres planes independientes: no tienes que seguir un orden.</p>${[6,7,8].map(i=>{const n=OBJ[i],r=RT[i],team=i==8,k=mine(i).length,isCur=cur&&cur.goal===i;
+return`<div class="c"${isCur?' style="border-color:var(--ac)"':''}><div class="row" style="align-items:flex-start"><div style="flex:1"><b>${E(n)}</b>${isCur?' <span class="tag">PLAN ACTUAL</span>':''}<div class="m">${E(rutaName(r[0],r.length>1?r[1]:team))}${k?' · '+k+(k==1?' plan guardado':' planes guardados'):''}</div></div><button class="b sm${isCur?' s':''}" style="margin:0" data-a="cyPick" data-v="${i}">Elegir</button></div></div>`}).join('')}`}
 function abV(){const g=S.tmp.cyg,n=OBJ[g],oth=mine(g).filter(x=>x.id!==S.cy.active),pa=oth.filter(x=>x.status=='pausado');
 return`<button class="b t sm" data-a="cyChange">← Volver</button><h1>${E(n)}</h1><div class="c"><b>Ya tienes un plan anterior de este tipo.</b><div class="m" style="margin-top:4px">¿Qué deseas hacer?</div></div>
 <div class="c" style="border-color:var(--ac)"><div class="row"><b>Iniciar un nuevo plan</b><span class="tag">RECOMENDADO</span></div><div class="m" style="margin:6px 0">Empiezas desde cero, en 0 %. Tu plan anterior se conserva intacto en «Mis planes anteriores».</div><button class="b" data-a="cyNew">Iniciar un nuevo plan</button></div>
 <div class="c"><b>Continuar mi plan anterior</b><div class="m" style="margin:6px 0">${pa.length?'Elige cuál retomar. Recuperas exactamente su avance, actividades, respuestas y porcentaje.':oth.length?'No hay un plan pausado de este tipo para retomar (los demás están completados). Puedes consultarlos en «Mis planes anteriores».':'No hay otro plan de este tipo para retomar: el que tienes ahora ya es el activo.'}</div><button class="b s" data-a="cyChoose"${pa.length?'':' disabled style="opacity:.45"'}>Continuar mi plan anterior</button></div>`}
-function card(it,btns){return`<div class="c"><div class="row" style="align-items:flex-start"><div style="flex:1"><b>${title(it)}</b><div class="m">${E(it.plan||'')}</div></div><span class="tag">${ST[it.status]||E(it.status)}</span></div><div style="margin:8px 0">${bar(it.pct||0)}</div><div class="m"><b>${it.pct||0} %</b> · ${it.done||0} de ${it.total||0} actividades completadas</div><div class="m">Inicio: ${fd(it.start)} · Última actividad: ${it.last?fd(it.last):'sin actividades'}${it.status=='completado'&&it.end?' · Fin: '+fd(it.end):''}</div>${btns||''}</div>`}
+function card(it,btns){return`<div class="c"><div class="row" style="align-items:flex-start"><div style="flex:1"><b>${title(it)}</b><div class="m">${E(it.plan||'')}</div></div><span class="tag">${ST[it.status]||E(it.status)}</span></div>${isNew(it.r)?'':'<div class="m"><span class="tag">Versión anterior</span> Actividades de la versión anterior; se conservan tal cual.</div>'}<div style="margin:8px 0">${bar(it.pct||0)}</div><div class="m"><b>${it.pct||0} %</b> · ${it.done||0} de ${it.total||0} actividades completadas</div><div class="m">Inicio: ${fd(it.start)} · Última actividad: ${it.last?fd(it.last):'sin actividades'}${it.status=='completado'&&it.end?' · Fin: '+fd(it.end):''}</div>${btns||''}</div>`}
 function chooseV(){const g=S.tmp.cyg,pa=mine(g).filter(x=>x.status=='pausado');
 return`<button class="b t sm" data-a="cyPick" data-v="${g}">← Volver</button><h1>Continuar mi plan anterior</h1><p class="m">${E(OBJ[g])}. Elige cuál retomar.</p>${pa.map(it=>card(it,`<button class="b" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`)).join('')||'<div class="c"><div class="m">No hay planes pausados de este tipo.</div></div>'}`}
 function listV(){const c=S.cy,act=c&&find(c.active),prev=c?c.items.filter(x=>x.id!==c.active).sort((a,b)=>String(b.last||b.start||'').localeCompare(String(a.last||a.start||''))||(b.at||0)-(a.at||0)):[];
@@ -1264,7 +1896,7 @@ ${act?`<div class="m" style="margin:10px 2px 4px">PLAN ACTUAL</div>${card(act)}`
 ${prev.map(it=>card(it,`<div class="row2"><button class="b sm s" style="margin:0" data-a="cyView" data-v="${E(it.id)}">Ver detalles</button>${it.status=='pausado'?`<button class="b sm" style="margin:0" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`:''}</div>`)).join('')||'<div class="c"><div class="m">Todavía no tienes planes anteriores. Cuando cambies de plan, el actual aparecerá aquí.</div></div>'}
 ${leg.length?`<div class="m" style="margin:14px 2px 4px">GUARDADOS ANTES DE ESTA VERSIÓN</div>${leg.map(([x,i])=>`<div class="c"><div class="row"><div style="flex:1"><b>${E(x.ruta||'Ciclo guardado')}</b><div class="m">Ciclo ${x.n||i+1} · ${fd(x.fecha)} · ${x.pasos?(x.res||[]).length+' de '+x.pasos+' actividades':'sin detalle de actividades'}</div></div><button class="b sm s" style="margin:0" data-a="cyViewL" data-v="${i}">Ver detalles</button></div></div>`).join('')}`:''}`}
 function personName(id){const p=(S.people||[]).find(x=>String(x.id)===String(id));return p?p.nombre:'Contacto no disponible'}
-function stepRows(r,team,d){const st=stepsOf(r,team),res=d.res||{},acts=d.acts||{},g=d.g||{};
+function stepRows(r,team,d){if(isNew(r)&&window.P3)return P3.rows(r,d,fd);const st=stepsOf(r,team),res=d.res||{},acts=d.acts||{},g=d.g||{};
 return st.map((s,i)=>{const k=r+i,x=res[k],a=acts[k]||{},gg=g[k];const list=(a.list||[]).filter(Boolean),ppl=(gg&&gg.ppl)||[];
 return`<details><summary>${i+1}. ${E(s.t)}<span class="m">${x?'✓ Completada':(a.text||list.length||ppl.length)?'En proceso':'Pendiente'}</span></summary>
 ${x?`<div class="li"><span style="flex:1"><b>Resultado:</b> ${E(x.r)}<br><span class="m">${fd(x.f)}</span></span></div>`:''}
@@ -1275,7 +1907,7 @@ ${!x&&!a.text&&!list.length&&!ppl.length?'<div class="m" style="padding:6px 2px"
 function viewV(){const it=find(S.tmp.cyd);if(!it)return`<button class="b t sm" data-a="cyList">← Volver</button><div class="c"><div class="m">No encontré ese plan.</div></div>`;
 const d=live(it)?liveData():(it.data||{});
 const bien=isO(d.bien)?Object.entries(d.bien).filter(([k,v])=>v):[];
-return`<button class="b t sm" data-a="cyList">← Volver</button><h1>${title(it)}</h1><div class="c"><span class="tag">Solo lectura</span> <span class="tag">${ST[it.status]||''}</span><div style="margin:8px 0">${bar(it.pct||0)}</div><div class="m"><b>${it.pct||0} %</b> · ${it.done||0} de ${it.total||0} actividades completadas</div><div class="m">Objetivo: ${E(it.plan||'')}</div><div class="m">Inicio: ${fd(it.start)} · Última actividad: ${it.last?fd(it.last):'sin actividades'}${it.end?' · Fin: '+fd(it.end):''}</div></div>
+return`<button class="b t sm" data-a="cyList">← Volver</button><h1>${title(it)}</h1><div class="c"><span class="tag">Solo lectura</span> <span class="tag">${ST[it.status]||''}</span>${isNew(it.r)?'':' <span class="tag">Versión anterior</span>'}<div style="margin:8px 0">${bar(it.pct||0)}</div><div class="m"><b>${it.pct||0} %</b> · ${it.done||0} de ${it.total||0} actividades completadas</div><div class="m">Objetivo: ${E(it.plan||'')}</div><div class="m">Inicio: ${fd(it.start)} · Última actividad: ${it.last?fd(it.last):'sin actividades'}${it.end?' · Fin: '+fd(it.end):''}</div></div>
 ${it.status=='pausado'?`<button class="b" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`:''}
 ${stepRows(it.r,!!it.team,d)}
 ${bien.length?`<details><summary>Datos de bienestar</summary>${bien.map(([k,v])=>`<div class="li"><span style="flex:1"><b>${E(k)}:</b> ${E(v)}</span></div>`).join('')}</details>`:''}
@@ -1289,9 +1921,9 @@ else{const t=find(arg);det=t?`<div class="m" style="margin-bottom:8px">Retomará
 if(cur)det+=`<div class="m" style="margin-bottom:8px">Se guardará: <b>${title(cur)}</b> (${cur.pct||0} %).</div>`;
 openSheet(`<div style="font-size:18px;font-weight:700">¿Estás seguro de que deseas cambiar de plan?</div><div class="m" style="margin:6px 0 10px">Guardaremos tu plan actual con todas sus actividades, respuestas y progreso. Tus contactos y demás registros permanecerán disponibles.</div>${det}<button class="b" data-a="cyGo">Confirmar cambio</button><button class="b t" data-a="cyCancel">Cancelar</button>`)}
 Object.assign(A,{
-cyChange(){S.tmp.cyx=null;S.v=pickV},
+cyChange(){S.tmp.cyx=null;S.tmp.cyrep=0;S.v=pickV},
 cyList(){closeSheet();S.v=listV},
-cyPick(e,v){const g=+v;S.tmp.cyg=g;if(mine(g).length)S.v=abV;else confirmSheet('new',g)},
+cyPick(e,v){const g=+v;S.tmp.cyg=g;if(S.tmp.cyrep)confirmSheet('new',g);else if(mine(g).length)S.v=abV;else confirmSheet('new',g)},
 cyNew(){confirmSheet('new',S.tmp.cyg)},
 cyChoose(){S.v=chooseV},
 cyResume(e,v){confirmSheet('resume',v)},
@@ -1306,8 +1938,10 @@ toast('Plan anterior guardado. Ahora estás en: '+r.item.ruta+(r.item.n>1?' · C
 setTimeout(()=>{cloud()},50)},
 repetir(){const g=S.cy&&S.cy.verified&&S.r?goalOf(S.r,!!S.team):-1;
 if(g<0){const a=steps(),snap={};a.forEach((_,i)=>{const k=key(i);if(S.g[k])snap[k]=JSON.parse(JSON.stringify(S.g[k]))});S.cycles.push({n:S.cycles.length+1,fecha:today(),ruta:rname(),r:S.r,pasos:a.length,res:a.map((s,i)=>S.res[key(i)]&&Object.assign({paso:s.t},S.res[key(i)])).filter(Boolean),g:snap,stats:stats()});a.forEach((_,i)=>{delete S.res[key(i)];delete S.g[key(i)]});S.tab='inicio';S.open=null;S.v=null;toast('Nuevo ciclo iniciado. El anterior quedó guardado.');return}
-confirmSheet('new',g)}});
-return{canonState,orphan,materialize,nPlans,fix,sync,tidy,boot,onAssign,mergeRemote,beforeTake,stats:cst,cn,goalOf,itemFromState,bar:bar2,chip,get err(){return err},get msg(){return msg},_swap:swap,find,OBJ}})();
+if(g<6){S.tmp.cyrep=1;S.v=pickV;return}
+S.tmp.cyrep=1;confirmSheet('new',g)},
+askNew(g){S.tmp.cyrep=1;S.tmp.cyg=g;confirmSheet('new',g)}});
+return{isNew,canonState,orphan,materialize,nPlans,fix,sync,tidy,boot,onAssign,mergeRemote,beforeTake,stats:cst,cn,goalOf,itemFromState,bar:bar2,chip,get err(){return err},askNew:A.askNew,get msg(){return msg},_swap:swap,find,OBJ}})();
 window.CY=CY;
 try{CY.boot()}catch(e){}
 
@@ -1317,7 +1951,7 @@ window.__RO=true;
 const ISO=/[?&]aislado=1(&|$)/.test(location.search);
 const CS=(()=>{
 let cfg={},on=false;
-const SEC={profile:['p','d','stage','uid','fbUid'],plan:['r','team'],plans:['cy'],activities:['acts','res','g','sup','bien','cyid'],people:['people','ins'],meetings:['jt','rev'],incentives:['inc'],progress:['ev','cycles'],settings:['mode','eqt','lt','role'],team:['L','fbIn','ld']};
+const SEC={profile:['p','d','stage','uid','fbUid'],plan:['r','team'],plans:['cy'],activities:['acts','res','g','sup','bien','cyid'],people:['people','ins','p3'],meetings:['jt','rev'],incentives:['inc'],progress:['ev','cycles'],settings:['mode','eqt','lt','role'],team:['L','fbIn','ld']};
 const MK='p30meta',st={state:'pending',user:null,gate:'loading',last:0,errCode:'',errMsg:'',errRaw:''};
 let meta={},tm=null,busy=false,api=null,lastRec=0,wd=null;
 const lm=()=>{try{meta=JSON.parse(localStorage.getItem(MK))||{}}catch(e){meta={}}['rev','hash','base','localAt','cur'].forEach(k=>meta[k]=meta[k]||{})},sm=()=>{try{localStorage.setItem(MK,JSON.stringify(meta))}catch(e){}};
@@ -1408,7 +2042,8 @@ csOutAsk(){openSheet(`<div style="font-size:18px;font-weight:700">¿Cerrar sesi�
 csOut(){closeSheet();toast('Cerrando sesión…');return CS.signOut()}});
 window.CS=CS;
 (()=>{const d=document.createElement('div');d.id='pruebabar';d.setAttribute('role','status');d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:300;background:#b45309;color:#fff;font:700 12px/1.2 system-ui,sans-serif;text-align:center;padding:calc(4px + env(safe-area-inset-top,0px)) 6px 4px;pointer-events:none';d.textContent=ISO?'PRUEBA · AISLADO · sin nube, sin tus datos reales':'PRUEBA · SOLO LECTURA · no se guarda nada en tu nube';document.body.appendChild(d);document.body.style.paddingTop='calc(26px + env(safe-area-inset-top,0px))'})();
-window.__demo=()=>{const P=Array.from({length:10},(_,i)=>({id:'demo'+i,nombre:'Persona Ejemplo '+(i+1),tipo:i<7?'Prospecto':'Cliente',interes:'Ambos',estado:i<7?'Por contactar':'Cliente',tel:'',createdAt:'2026-10-0'+(i%9+1)}));const res={};for(let i=0;i<5;i++)res['venta'+i]={r:'Resultado de ejemplo '+(i+1),f:'2026-10-0'+(i+1)};const st={tab:'ruta',p:{n:'Usuario de prueba',a:'',t:'',f:'2026-10-01',l:''},d:{goal:'0',team:'No',exp:'Pocas veces'},r:'venta',team:false,stage:'app',mode:'yo',role:'miembro',acts:{venta0:{text:'Meta de ejemplo: 5 conversaciones por semana'},venta1:{list:P.map(p=>p.nombre)}},res,g:{venta2:{ppl:P.slice(0,3).map(p=>p.id),d:Object.fromEntries(P.slice(0,3).map(p=>[p.id,{res:'Mostró interés'}]))}},people:P,rev:[],ev:[],cycles:[]};localStorage.setItem('p30',JSON.stringify(st));location.reload()};
+window.__demo=()=>{const P=Array.from({length:10},(_,i)=>({id:'demo'+i,nombre:'Persona Ejemplo '+(i+1),tipo:i<7?'Prospecto':'Cliente',interes:'Ambos',estado:i<7?'Por contactar':'Cliente',tel:'',createdAt:'2026-10-0'+(i%9+1)}));const st={tab:'inicio',p:{n:'Usuario de prueba',a:'',t:'',f:'2026-10-01',l:''},d:{team:'No',exp:'Pocas veces'},r:null,team:false,stage:'diag',mode:'yo',role:'miembro',acts:{},res:{},g:{},people:P,rev:[],ev:[],p3:{v:1,compras:[{id:'cp_demo1',pid:'demo7',fecha:'2026-10-05',prod:'Producto de ejemplo',cant:1,precio:100}],seg:[],bien:[],acu:[],hab:[],dev:[],reu:[],rec:[],ev:[]}};localStorage.setItem('p30',JSON.stringify(st));localStorage.setItem('p30_limpio3',JSON.stringify({at:Date.now(),nada:true}));location.reload()};
+(()=>{const L=window.__limp;if(L&&(L.ok||L.err)){setTimeout(()=>{try{toast(L.ok?'Prueba limpia: los planes anteriores se retiraron. Tus personas, compras, seguimientos, equipo e incentivos siguen aquí. Copia técnica guardada.':L.err)}catch(e){}},700)}})();
 (()=>{if(!ISO)return;let has=false;try{has=!!(S.p&&S.p.n)}catch(e){}if(has)return;const b=document.createElement('button');b.id='demobtn';b.textContent='Cargar datos de EJEMPLO (ficticios)';b.style.cssText='position:fixed;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:301;background:#14213d;color:#fff;border:0;border-radius:12px;padding:10px 12px;font:700 13px system-ui';b.onclick=()=>window.__demo();document.body.appendChild(b)})();
 CS.init();
 render();
