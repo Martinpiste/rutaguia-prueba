@@ -1742,19 +1742,30 @@ const L1={
   const full=nwFull(n);if(!force){const dup=findDup(full,'');if(dup){n.dup=dup.id;return}}
   const x=ensureP(full,'','Miembro del equipo',true),p=x.p;p.nombres=n.nombres.trim();p.apellidos=n.apellidos.trim();p.nombre=nwFull(p);p.fechaInsc=n.finsc;
   const l=F().ppl=F().ppl||[];if(!l.includes(p.id))l.push(p.id);nwTake(p.id);toast('Persona guardada: '+p.nombre)},
+ psave:pid=>{const p=PP(pid),d=dd(pid);if(!p||L1fcheck(pid,d,p)!==true)return toast('Completa los datos para guardar.');d.saved=true;d.det=false;toast('Persona guardada: '+p.nombre)},
+ pedit:pid=>{dd(pid).saved=false},pdet:pid=>{const d=dd(pid);d.det=!d.det},
  live:()=>{const el=document.getElementById('l1sv');if(el)el.innerHTML=nwSave()}};
-document.addEventListener('input',e=>{const d=e.target&&e.target.dataset;if(d&&d.p3&&d.p3.indexOf('f/nw/')===0){const n=nwG();if(n.dup){n.dup='';}setTimeout(L1.live,0)}});
+document.addEventListener('input',e=>{const d=e.target&&e.target.dataset;const mm=d&&(d.p3||d.p3pn)&&/^f\/d\/([^/|]+)\//.exec(d.p3||'');if(mm)setTimeout(()=>{const el=document.getElementById('l1ps_'+mm[1]),p=PP(mm[1]);if(el&&p)el.innerHTML=L1psave(mm[1],dd(mm[1]),p)},0);if(d&&d.p3pn){const pid=d.p3pn.split('|')[0];setTimeout(()=>{const el=document.getElementById('l1ps_'+pid),p=PP(pid);if(el&&p)el.innerHTML=L1psave(pid,dd(pid),p)},0)}if(d&&d.p3&&d.p3.indexOf('f/nw/')===0){const n=nwG();if(n.dup){n.dup='';}setTimeout(L1.live,0)}});
+
+const L1fcheck=(pid,d,p)=>{P3.splitInto(p);if(blank(p.nombres))return'escribe sus nombres (y apellidos si los tiene).';if(!d.finsc)return'anota la fecha de inscripción.';if(d.finsc>D0())return'la fecha de inscripción no puede ser futura.';if(!d.spons||d.spons==='otro')return'elige a su patrocinador.';if(d.spons===pid)return'una persona no puede ser su propio patrocinador.';if(blank(d.quiere))return'anota lo que quiere lograr.';if(!d.exp)return'elige su experiencia previa.';if(!d.prod)return'elige su conocimiento de productos.';if(!d.vent)return'elige su experiencia en ventas.';if(d.eqN===''||d.eqN==null||!(parseInt(d.eqN,10)>=0))return'anota la cantidad actual de personas en su equipo (0 si no tiene).';if(!d.desarrolla)return'indica si ya está desarrollando a alguien.';if(blank(d.sit))return'anota su situación actual.';if(!d.plan)return'registra el plan que eligió la persona.';return true};
+const L1sum=(pid,d,p)=>{const sp=d.spons==='yo'?'Yo':(PP(d.spons)?pname(d.spons):'—');
+ return`<div class="m">Patrocinador: <b>${E(sp)}</b></div><div style="margin-top:6px"><button class="b sm t" style="width:auto;margin:0 6px 0 0" data-a="l1pdet" data-v="${ATTR(pid)}">${d.det?'Ocultar detalles':'Ver detalles'}</button><button class="b sm t" style="width:auto;margin:0" data-a="l1pedit" data-v="${ATTR(pid)}">Editar</button></div>${d.det?`<div class="m" style="margin-top8px">Inscripción: <b>${E(fd(d.finsc))}</b><br>Quiere lograr: <b>${E(d.quiere)}</b><br>Experiencia previa: <b>${E(d.exp)}</b>${d.expTxt?' ('+E(d.expTxt)+')':''}<br>Conocimiento de productos: <b>${E(d.prod)}</b><br>Experiencia en ventas: <b>${E(d.vent)}</b><br>Personas en su equipo: <b>${E(d.eqN)}</b><br>¿Ya desarrolla a alguien?: <b>${E(d.desarrolla)}</b>${d.desarrollaTxt?' ('+E(d.desarrollaTxt)+')':''}<br>Situación: <b>${E(d.sit)}</b><br>Plan que elige: <b>${E(d.plan)}</b></div>`.replace('margin-top8px','margin-top:8px'):''}`};
+const L1psave=(pid,d,p)=>{const m=L1fcheck(pid,d,p);return m===true?`<button class="b s" style="margin-top:10px" data-a="l1psave" data-v="${ATTR(pid)}">Guardar persona a desarrollar</button>`:note('Para guardar a esta persona falta: '+E(String(m).replace(/\.$/,''))+'.')};
+const anySaved=()=>(F().ppl||[]).some(pid=>PP(pid)&&dd(pid).saved);
+const L1full=(pid,d,p)=>{const b='f/d/'+pid+'/';return`${nameBox(p)}${lab('FECHA DE INSCRIPCIÓN')}${inp(b+'finsc','','date')}
+  ${lab('PATROCINADOR')}${spBox(b,d.spons==='otro'?'':d.spons,'l1s_'+pid)}
+  ${lab('¿QUÉ QUIERE LOGRAR? (en sus palabras)')}${area(b+'quiere','',2)}${L1rest(b,d)}`};
 /* ===== 1: elige a quién desarrollar ===== */
 IMPL.pliderazgo[0]=plist({id:'l1',vacio:'Busca o agrega a la persona que vas a desarrollar.',suggest:()=>teamP().filter(p=>!dev(p.id)),
  intro:()=>note('La persona elige su plan; tú no decides por ella. Si todavía no lo tiene claro, regístralo así.'),
  init:L1init,
- card:(pid,d,p)=>{const b='f/d/'+pid+'/';return`${nameBox(p)}${lab('FECHA DE INSCRIPCIÓN')}${inp(b+'finsc','','date')}
-  ${lab('PATROCINADOR')}${spBox(b,d.spons==='otro'?'':d.spons,'l1s_'+pid)}
-  ${lab('¿QUÉ QUIERE LOGRAR? (en sus palabras)')}${area(b+'quiere','',2)}${L1rest(b,d)}`},
+ card:(pid,d,p)=>d.saved?L1sum(pid,d,p):L1full(pid,d,p)+`<div id="l1ps_${ATTR(pid)}">${L1psave(pid,d,p)}</div>`,
  adder:(sug,l)=>L1adder(sug,l),
- check:(pid,d,p)=>{P3.splitInto(p);if(blank(p.nombres))return'escribe sus nombres (y apellidos si los tiene).';if(!d.finsc)return'anota la fecha de inscripción.';if(d.finsc>D0())return'la fecha de inscripción no puede ser futura.';if(!d.spons||d.spons==='otro')return'elige a su patrocinador.';if(d.spons===pid)return'una persona no puede ser su propio patrocinador.';if(blank(d.quiere))return'anota lo que quiere lograr.';if(!d.exp)return'elige su experiencia previa.';if(!d.prod)return'elige su conocimiento de productos.';if(!d.vent)return'elige su experiencia en ventas.';if(d.eqN===''||d.eqN==null||!(parseInt(d.eqN,10)>=0))return'anota la cantidad actual de personas en su equipo (0 si no tiene).';if(!d.desarrolla)return'indica si ya está desarrollando a alguien.';if(blank(d.sit))return'anota su situación actual.';if(!d.plan)return'registra el plan que eligió la persona.';return true},
+ check:L1fcheck,
  commit:(pid,d,p)=>{toTeam(p);p.ult=D0();p.fechaInsc=d.finsc;const ins=(S.ins||[]).find(x=>x.pid===pid);if(ins&&!ins.fecha){ins.fecha=d.finsc;ins.enrollmentDate=d.finsc}ensureDev(pid,{plan:d.plan,quiere:d.quiere.trim(),exp:d.exp,expTxt:d.expTxt||'',sit:d.sit.trim(),finsc:d.finsc,spons:d.spons,prod:d.prod,vent:d.vent,eqN:parseInt(d.eqN,10),desarrolla:d.desarrolla,desarrollaTxt:d.desarrollaTxt||''});logSeg({id:'sg_l1_'+cyId()+'_'+pid,pid,tipo:'desarrollo',res:'Plan elegido: '+d.plan,src:'lider1'})},
  summary:n=>n+' persona(s) en desarrollo'});
+{const B0=IMPL.pliderazgo[0];IMPL.pliderazgo[0]={render:B0.render,commit:B0.commit,noSave:()=>!anySaved(),
+ check:()=>{const l=(F().ppl||[]).filter(pid=>PP(pid));if(!l.length)return'Busca o agrega a la persona que vas a desarrollar.';for(const pid of l){if(!dd(pid).saved)return PP(pid).nombre+': completa sus datos y pulsa «Guardar persona a desarrollar».'}return B0.check()}}}
 /* ===== 2: acuerda su meta y compromiso ===== */
 IMPL.pliderazgo[1]=plist({id:'l2',vacio:'Elige a la persona con quien acuerdas su meta.',suggest:()=>devs().map(x=>PP(x.pid)).filter(Boolean),
  init:(pid,d)=>{if(d.meta===undefined){const a=latestAcu(pid),v=dev(pid)||{};d.plan=(a&&a.plan)||v.plan||'';d.meta=a?a.meta:'';d.comp=a?JSON.parse(JSON.stringify(a.comp||[])):[];d.apoyo=a?a.apoyo:'';d.inc=a?incNames(a.inc):[];d.rev=a?a.rev:''}},
@@ -1889,8 +1900,9 @@ function page(i){const a=steps(),s=a[i],dn=done(i),impl=(IMPL[S.r]||[])[i];
  if(!impl)return hd+`<div class="c"><div class="m">Esta actividad no está disponible.</div></div>`+ft;
  let body,v;try{body=impl.render();v=impl.check()}catch(e){window.__p3err=(window.__p3err||[]).concat(String(e&&e.stack||e));body=`<div class="c"><div class="m" role="alert">No se pudo mostrar esta actividad. Tus datos no se tocaron.</div></div>`;v='Esta actividad no se pudo mostrar.'}
  const status=dn?`<div class="c">✓ Hecho: ${E(S.res[key(i)].r)}</div>`:'';
- return hd+status+body+`<button class="b s" data-a="p3save">Guardar avance</button><div id="p3act" data-i="${i}">${actHtml(i,v,dn)}</div><button class="b t" data-a="p3save">Guardar y continuar después</button>`+ft}
-const actHtml=(i,v,dn)=>v===true?`<button class="b g" data-a="p3done" data-v="${i}">${dn?'Actualizar resultado':'Marcar como hecho'}</button>`:`<p class="m" role="status">${E(v)}</p>`;
+ if(impl.noSave&&impl.noSave())return hd+status+body+P3.note('Guarda al menos a una persona (botón «Guardar persona a desarrollar» dentro de su ficha) para poder guardar avance o marcar la actividad como hecha.')+ft;
+ return hd+status+body+`<button class="b s" data-a="p3save">Guardar avance</button><div id="p3act" data-i="${i}">${actHtml(i,v,dn,impl)}</div><button class="b t" data-a="p3save">Guardar y continuar después</button>`+ft}
+const actHtml=(i,v,dn,impl)=>v===true?`<button class="b g" data-a="p3done" data-v="${i}">${dn?'Actualizar resultado':(impl&&impl.noSave?'Guardar como hecho':'Marcar como hecho')}</button>`:`<p class="m" role="status">${E(v)}</p>`;
 /* al escribir en un campo, se actualiza solo la zona del botón (sin volver a dibujar y sin perder el foco) */
 function refreshAct(){const el=document.getElementById('p3act');if(!el||!P3.is(S.r))return;const i=+el.dataset.i,impl=(IMPL[S.r]||[])[i];if(!impl)return;let v;try{v=impl.check()}catch(e){v='Esta actividad no se pudo comprobar.'}el.innerHTML=actHtml(i,v,done(i))}
 /* ----- historial de un ciclo de los planes nuevos (solo lectura) ----- */
@@ -1913,7 +1925,7 @@ formP=function(i){return _formP(i)+(i>=0?histP(S.people[i]):'')};
 Object.assign(A,{
 p3c(e,v){const k=v.indexOf('|'),path=v.slice(0,k),val=v.slice(k+1);setv(path,getv(path)===val?'':val)},
 p3m(e,v){const q=v.split('|'),path=q[0],val=q[1],max=+q[2]||0;const a=(getv(path)||[]).slice(),i=a.indexOf(val);if(i>=0)a.splice(i,1);else{if(max&&a.length>=max)return toast('Máximo '+max+' elementos.');a.push(val)}setv(path,a)},
-l1mode(e,v){P3.L1.mode(v)},l1save(e,v){P3.L1.save(v==='1')},l1usedup(){P3.L1.useDup()},l1cancel(){P3.L1.cancel()},
+l1mode(e,v){P3.L1.mode(v)},l1save(e,v){P3.L1.save(v==='1')},l1usedup(){P3.L1.useDup()},l1cancel(){P3.L1.cancel()},l1psave(e,v){P3.L1.psave(v)},l1pedit(e,v){P3.L1.pedit(v)},l1pdet(e,v){P3.L1.pdet(v)},
 p3rm(e,v){const k=v.indexOf('|'),path=v.slice(0,k),pid=v.slice(k+1);setv(path,(getv(path)||[]).filter(x=>x!==pid))},
 p3pick(e,v){const k=v.indexOf('|'),t=v.slice(0,k),pid=v.slice(k+1);applyTarget(t,pid);if(t==='add:f/ppl'&&getv('f/nw'))getv('f/nw').m='';toast('Seleccionada: '+pname(pid))},
 p3newp(e,v){const q=v.split('|'),id=q[0],target=q[1],tipo=q[2],name=((S.tmp.p3q||{})[id]||'').trim(),tel=(S.tmp.p3t||{})[id]||'';if(name.length<2)return toast('Escribe el nombre de la persona.');
