@@ -1178,13 +1178,14 @@ const note=(t,cls)=>`<div class="m" style="margin:6px 0${cls=='warn'?';color:var
 const card=(h,extra)=>`<div class="c"${extra?' style="'+extra+'"':''}>${h}</div>`;
 const err=(m)=>m?`<div class="m" role="alert" style="color:var(--ert,#b42318);margin:4px 0">⚠ ${E(m)}</div>`:'';
 /* buscador de personas: elegir una existente o crear una nueva SOLO después de revisar posibles duplicados */
-function pick(id,target,tipo,sug){
+function pick(id,target,tipo,sug,opt){opt=opt||{};
  const q=(S.tmp.p3q||{})[id]||'',t=(S.tmp.p3t||{})[id]||'';
- return`<div class="c" style="background:transparent;padding:10px"><label>Buscar a una persona o crear una nueva</label><input data-p3q="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}" placeholder="Escribe un nombre…" autocomplete="off" value="${ATTR(q)}"><input data-p3t="${ATTR(id)}" type="tel" placeholder="Teléfono (opcional, ayuda a detectar duplicados)" value="${ATTR(t)}"><div id="p3r_${ATTR(id)}">${pickRes(id,target,tipo)}</div>${sug||''}</div>`}
+ return`<div class="c" style="background:transparent;padding:10px"><label>${E(opt.label||"Buscar a una persona o crear una nueva")}</label><input data-p3q="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}" placeholder="Escribe un nombre…" autocomplete="off" value="${ATTR(q)}">${opt.nophone?'':`<input data-p3t="${ATTR(id)}" type="tel" placeholder="Teléfono (opcional, ayuda a detectar duplicados)" value="${ATTR(t)}">`}<div id="p3r_${ATTR(id)}">${pickRes(id,target,tipo)}</div>${sug||''}</div>`}
 function pickRes(id,target,tipo){const q=(S.tmp.p3q||{})[id]||'',t=(S.tmp.p3t||{})[id]||'';if(nrm(q).length<2&&dg(t).length<7)return'<div class="m">Escribe al menos 2 letras para buscar en tus Personas.</div>';
  let m=similar(q);const dt=t?findDup('',t):null;if(dt&&!m.includes(dt))m=[dt].concat(m);
- const ex=findDup(q,t);
- return`${m.map(p=>`<button class="ch" data-a="p3pick" data-v="${ATTR(target)}|${ATTR(p.id)}">${E(p.nombre)}${p.tipo?' · '+E(p.tipo):''}${p.tel&&dg(p.tel)===dg(t)&&t?' · mismo teléfono':''}</button>`).join('')}${ex?`<div class="m" style="margin-top:6px">Ya existe «${E(ex.nombre)}»${t&&dg(ex.tel)===dg(t)&&dg(t).length>=7&&nrm(ex.nombre)!==nrm(q)?' con ese mismo teléfono':''}: elígela arriba para no duplicarla.</div><button class="b sm t" style="margin-top:6px;width:auto" data-a="p3newp" data-v="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}|1">No es la misma persona: crear otra con este nombre</button>`:`<button class="b sm s" style="margin-top:8px" data-a="p3newp" data-v="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}">+ Crear «${E(String(q).trim())}» como persona nueva</button>`}`}
+ const ex=findDup(q,t);const ro=/^ro_/.test(id);
+ if(ro)return m.length?m.map(p=>`<button class="ch" data-a="p3pick" data-v="${ATTR(target)}|${ATTR(p.id)}">${E(p.nombre)}${p.tipo?' · '+E(p.tipo):''}</button>`).join(''):'<div class="m">No hay coincidencias. Solo puedes elegir a una persona ya registrada.</div>';
+ return`${m.map(p=>`<button class="ch" data-a="p3pick" data-v="${ATTR(target)}|${ATTR(p.id)}">${E(p.nombre)}${p.tipo?' · '+E(p.tipo):''}${p.tel&&dg(p.tel)===dg(t)&&t?' · mismo teléfono':''}</button>`).join('')}${ex?`<div class="m" style="margin-top:6px">Ya existe «${E(ex.nombre)}»${t&&dg(ex.tel)===dg(t)&&dg(t).length>=7&&nrm(ex.nombre)!==nrm(q)?' con ese mismo teléfono':''}: elígela arriba para no duplicarla.</div><button class="b sm t" style="margin-top:6px;width:auto" data-a="p3newp" data-v="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}|1">No es la misma persona: crear otra con este nombre</button>`:`<button class="b sm s" style="margin-top:8px" data-a="p3newp" data-v="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}">${id==='l1'?'+ Agregar nuevo':'+ Crear «'+E(String(q).trim())+'» como persona nueva'}</button>`}`}
 const sugBtns=(list,target)=>list.length?`<div class="m" style="margin-top:8px">Sugeridas:</div>${list.slice(0,8).map(p=>`<button class="ch" data-a="p3pick" data-v="${ATTR(target)}|${ATTR(p.id)}">${E(p.nombre)}</button>`).join('')}`:'';
 function applyTarget(target,pid){const[mode,path]=[target.slice(0,target.indexOf(':')),target.slice(target.indexOf(':')+1)];
  if(mode==='add'){const a=getv(path)||[];if(!a.includes(pid))a.push(pid);setv(path,a)}else if(mode==='set')setv(path,pid)}
@@ -1698,21 +1699,58 @@ const multiP=(path,list,cur)=>list.map(p=>`<button class="ch ${(cur||[]).include
 function plist(cfg){return{
  render:()=>{const f=F(),l=f.ppl=f.ppl||[];f.d=f.d||{};const sug=cfg.suggest?cfg.suggest().filter(p=>!l.includes(p.id)):[];
   return`${cfg.intro?cfg.intro():''}${l.length?'':note(cfg.vacio)}${l.map(pid=>{const p=PP(pid);if(!p)return'';const d=dd(pid);if(cfg.init)cfg.init(pid,d,p);
-   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}</div>`}).join('')}${pick(cfg.id,'add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'))}`},
+   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}</div>`}).join('')}${cfg.adder?cfg.adder(sug,l):pick(cfg.id,'add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'))}`},
  check:()=>{const l=F().ppl||[];if(!l.length)return cfg.vacio;for(const pid of l){const p=PP(pid);if(!p)continue;const m=cfg.check(pid,dd(pid),p);if(m!==true)return p.nombre+': '+m}return true},
  commit:()=>{const l=(F().ppl||[]).filter(pid=>PP(pid));l.forEach(pid=>cfg.commit(pid,dd(pid),PP(pid)));return cfg.summary(l.length)}}}
 const toTeam=p=>{if(!p.tipo||p.tipo==='Prospecto')p.tipo='Miembro del equipo';else if(p.tipo==='Cliente')p.tipo='Cliente y miembro'};
 const nameBox=p=>{P3.splitInto(p);return`${lab('NOMBRES')}<input data-p3pn="${ATTR(p.id)}|nombres" value="${ATTR(p.nombres||'')}" maxlength="80" autocomplete="off">${lab('APELLIDOS')}<input data-p3pn="${ATTR(p.id)}|apellidos" value="${ATTR(p.apellidos||'')}" maxlength="80" autocomplete="off">`};
 const TX=(b,k,l,ph,rows)=>`${lab(l)}${rows?area(b+k,ph||'',rows):inp(b+k,ph||'')}`;
+
+/* ===== actividad 1: agregar persona (Buscar / Agregar nueva con borrador; la persona se crea solo al Guardar) ===== */
+const L1rest=(b,d)=>`${lab('EXPERIENCIA PREVIA')}${chips(b+'exp',EXPS,d.exp)}${lab('DETALLE DE SU EXPERIENCIA (opcional)')}${inp(b+'expTxt','')}${lab('CONOCIMIENTO DE PRODUCTOS')}${chips(b+'prod',CONOC,d.prod)}${lab('EXPERIENCIA EN VENTAS')}${chips(b+'vent',VENT,d.vent)}
+  ${lab('CANTIDAD ACTUAL DE PERSONAS EN SU EQUIPO')}${inp(b+'eqN','Ej.: 0','number','inputmode="numeric" min="0" step="1"')}${lab('¿YA ESTÁ DESARROLLANDO A ALGUIEN?')}${chips(b+'desarrolla',['Sí','No'],d.desarrolla)}${d.desarrolla=='Sí'?`${lab('¿A QUIÉN? (opcional)')}${inp(b+'desarrollaTxt','Nombres')}`:''}
+  ${lab('SITUACIÓN ACTUAL')}${area(b+'sit','Tiempo disponible, trabajo, apoyo en casa…',2)}${lab('PLAN QUE ELIGE LA PERSONA')}${chips(b+'plan',PLANES,d.plan)}`;
+const nwG=()=>{const f=F();return isO(f.nw)?f.nw:(f.nw={})};
+const nwMissing=n=>{const m=[];if(blank(n.nombres))m.push('nombre');if(blank(n.apellidos))m.push('apellido');if(!n.finsc||n.finsc>D0())m.push(n.finsc&&n.finsc>D0()?'fecha de inscripción (no puede ser futura)':'fecha de inscripción');if(!(n.spons==='yo'||(n.spons&&n.spons!=='otro'&&PP(n.spons))))m.push('patrocinador');if(blank(n.quiere))m.push('qué quiere lograr');return m};
+const nwFull=n=>((n.nombres||'').trim()+' '+(n.apellidos||'').trim()).trim();
+function nwSave(){const n=nwG(),miss=nwMissing(n);
+ if(miss.length)return note('Para poder guardar falta: <b>'+E(miss.join(', '))+'</b>.');
+ const dup=n.dup?PP(n.dup):null;
+ if(dup)return`<div class="c"><div class="m">Ya existe «<b>${E(dup.nombre)}</b>» en tus Personas.</div><button class="b sm s" style="margin-top:6px;width:auto" data-a="l1usedup">Usar a «${E(dup.nombre)}» (no duplicar)</button> <button class="b sm t" style="margin-top:6px;width:auto" data-a="l1save" data-v="1">No es la misma persona: crear otra</button></div>`;
+ return`<button class="b" style="margin-top:10px" data-a="l1save" data-v="">Guardar persona</button>`}
+function L1adder(sug,l){const n=nwG(),m=n.m||'';
+ const head=(l||[]).length?'Agregar otra persona a desarrollar':'¿A quién vas a desarrollar?';
+ let body='';
+ if(m==='buscar')body=pick('l1','add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'),{label:'Escribe el nombre de la persona',nophone:true});
+ else if(m==='nuevo'){const b='f/nw/';
+  body=`<div class="c"><b>Persona nueva</b>${lab('NOMBRES (obligatorio)')}${inp(b+'nombres','Nombres')}${lab('APELLIDOS (obligatorio)')}${inp(b+'apellidos','Apellidos')}${lab('FECHA DE INSCRIPCIÓN')}${inp(b+'finsc','','date')}
+  ${lab('PATROCINADOR')}<div>${chips(b+'spons',[['yo','Yo']],n.spons)}<button class="ch ${n.spons&&n.spons!=='yo'?'on':''}" aria-pressed="${!!(n.spons&&n.spons!=='yo')}" data-a="p3c" data-v="${b}spons|otro">Otra persona ya registrada</button></div>
+  ${n.spons&&n.spons!=='yo'&&n.spons!=='otro'&&PP(n.spons)?`<div class="m">Patrocinador: <b>${E(pname(n.spons))}</b></div>`:''}${n.spons&&n.spons!=='yo'?pick('ro_nw','set:'+b+'spons','',sugBtns(teamP().slice(0,8),'set:'+b+'spons'),{label:'Buscar al patrocinador (solo si no eres tú)',nophone:true}):''}
+  ${lab('¿QUÉ QUIERE LOGRAR? (en sus palabras)')}${area(b+'quiere','',2)}${L1rest(b,n)}
+  <div id="l1sv">${nwSave()}</div><button class="b sm t" style="margin-top:8px;width:auto" data-a="l1cancel">Cancelar</button></div>`}
+ return`<div class="c" style="background:transparent;padding:10px"><b>${head}</b><div style="margin-top:6px"><button class="ch ${m==='buscar'?'on':''}" aria-pressed="${m==='buscar'}" data-a="l1mode" data-v="buscar">Buscar persona</button><button class="ch ${m==='nuevo'?'on':''}" aria-pressed="${m==='nuevo'}" data-a="l1mode" data-v="nuevo">Agregar persona nueva</button></div>${body}</div>`}
+const L1init=(pid,d,p)=>{if(d.quiere===undefined){const v=dev(pid)||{};d.quiere=v.quiere||'';d.exp=v.exp||'';d.expTxt=v.expTxt||'';d.sit=v.sit||'';d.plan=v.plan||'';d.finsc=v.finsc||p.fechaInsc||((S.ins||[]).find(x=>x.pid===pid)||{}).fecha||'';d.spons=v.spons||'';d.prod=v.prod||'';d.vent=v.vent||'';d.eqN=v.eqN!=null?String(v.eqN):'';d.desarrolla=v.desarrolla||'';d.desarrollaTxt=v.desarrollaTxt||''}};
+const DKEYS=['finsc','spons','quiere','exp','expTxt','prod','vent','eqN','desarrolla','desarrollaTxt','sit','plan'];
+const nwTake=pid=>{const n=nwG(),d=dd(pid);DKEYS.forEach(k=>{d[k]=n[k]==null?'':n[k]});delete F().nw;S.tmp.showErr=false};
+const L1={
+ mode:v=>{const n=nwG();n.m=n.m===v?'':v},
+ open:name=>{const n=nwG();n.m='nuevo';const sp=P3.splitName(name);if(blank(n.nombres))n.nombres=sp.nombres||'';if(blank(n.apellidos))n.apellidos=sp.apellidos||'';S.tmp.p3q=S.tmp.p3q||{};S.tmp.p3q.l1=''},
+ cancel:()=>{delete F().nw},
+ useDup:()=>{const n=nwG(),p=PP(n.dup);if(!p)return;const l=F().ppl=F().ppl||[];if(!l.includes(p.id))l.push(p.id);const d=dd(p.id);L1init(p.id,d,p);DKEYS.forEach(k=>{if((d[k]==null||d[k]==='')&&n[k]!=null&&n[k]!=='')d[k]=n[k]});delete F().nw;S.tmp.showErr=false;toast('Se agregó a '+p.nombre+' (ya existía, sin duplicar).')},
+ save:force=>{const n=nwG();if(nwMissing(n).length)return toast('Completa los datos obligatorios para guardar.');
+  const full=nwFull(n);if(!force){const dup=findDup(full,'');if(dup){n.dup=dup.id;return}}
+  const x=ensureP(full,'','Miembro del equipo',true),p=x.p;p.nombres=n.nombres.trim();p.apellidos=n.apellidos.trim();p.nombre=nwFull(p);p.fechaInsc=n.finsc;
+  const l=F().ppl=F().ppl||[];if(!l.includes(p.id))l.push(p.id);nwTake(p.id);toast('Persona guardada: '+p.nombre)},
+ live:()=>{const el=document.getElementById('l1sv');if(el)el.innerHTML=nwSave()}};
+document.addEventListener('input',e=>{const d=e.target&&e.target.dataset;if(d&&d.p3&&d.p3.indexOf('f/nw/')===0){const n=nwG();if(n.dup){n.dup='';}setTimeout(L1.live,0)}});
 /* ===== 1: elige a quién desarrollar ===== */
 IMPL.pliderazgo[0]=plist({id:'l1',vacio:'Busca o agrega a la persona que vas a desarrollar.',suggest:()=>teamP().filter(p=>!dev(p.id)),
  intro:()=>note('La persona elige su plan; tú no decides por ella. Si todavía no lo tiene claro, regístralo así.'),
- init:(pid,d,p)=>{if(d.quiere===undefined){const v=dev(pid)||{};d.quiere=v.quiere||'';d.exp=v.exp||'';d.expTxt=v.expTxt||'';d.sit=v.sit||'';d.plan=v.plan||'';d.finsc=v.finsc||p.fechaInsc||((S.ins||[]).find(x=>x.pid===pid)||{}).fecha||'';d.spons=v.spons||'';d.prod=v.prod||'';d.vent=v.vent||'';d.eqN=v.eqN!=null?String(v.eqN):'';d.desarrolla=v.desarrolla||'';d.desarrollaTxt=v.desarrollaTxt||''}},
+ init:L1init,
  card:(pid,d,p)=>{const b='f/d/'+pid+'/';return`${nameBox(p)}${lab('FECHA DE INSCRIPCIÓN')}${inp(b+'finsc','','date')}
-  ${lab('PATROCINADOR')}${chips(b+'spons',[['yo','Yo']],d.spons)}${d.spons&&d.spons!=='yo'?`<div class="m">Patrocinador: <b>${E(pname(d.spons))}</b></div>`:''}${pick('l1s_'+pid,'set:'+b+'spons','Miembro del equipo')}
-  ${lab('¿QUÉ QUIERE LOGRAR? (en sus palabras)')}${area(b+'quiere','',2)}${lab('EXPERIENCIA PREVIA')}${chips(b+'exp',EXPS,d.exp)}${lab('DETALLE DE SU EXPERIENCIA (opcional)')}${inp(b+'expTxt','')}${lab('CONOCIMIENTO DE PRODUCTOS')}${chips(b+'prod',CONOC,d.prod)}${lab('EXPERIENCIA EN VENTAS')}${chips(b+'vent',VENT,d.vent)}
-  ${lab('CANTIDAD ACTUAL DE PERSONAS EN SU EQUIPO')}${inp(b+'eqN','Ej.: 0','number','inputmode="numeric" min="0" step="1"')}${lab('¿YA ESTÁ DESARROLLANDO A ALGUIEN?')}${chips(b+'desarrolla',['Sí','No'],d.desarrolla)}${d.desarrolla=='Sí'?`${lab('¿A QUIÉN? (opcional)')}${inp(b+'desarrollaTxt','Nombres')}`:''}
-  ${lab('SITUACIÓN ACTUAL')}${area(b+'sit','Tiempo disponible, trabajo, apoyo en casa…',2)}${lab('PLAN QUE ELIGE LA PERSONA')}${chips(b+'plan',PLANES,d.plan)}`},
+  ${lab('PATROCINADOR')}${chips(b+'spons',[['yo','Yo']],d.spons)}${d.spons&&d.spons!=='yo'?`<div class="m">Patrocinador: <b>${E(pname(d.spons))}</b></div>`:''}${d.spons==='yo'?'':pick('l1s_'+pid,'set:'+b+'spons','Miembro del equipo',null,{label:'Buscar al patrocinador (solo si no eres tú)',nophone:true})}
+  ${lab('¿QUÉ QUIERE LOGRAR? (en sus palabras)')}${area(b+'quiere','',2)}${L1rest(b,d)}`},
+ adder:(sug,l)=>L1adder(sug,l),
  check:(pid,d,p)=>{P3.splitInto(p);if(blank(p.nombres))return'escribe sus nombres (y apellidos si los tiene).';if(!d.finsc)return'anota la fecha de inscripción.';if(d.finsc>D0())return'la fecha de inscripción no puede ser futura.';if(!d.spons)return'elige a su patrocinador.';if(d.spons===pid)return'una persona no puede ser su propio patrocinador.';if(blank(d.quiere))return'anota lo que quiere lograr.';if(!d.exp)return'elige su experiencia previa.';if(!d.prod)return'elige su conocimiento de productos.';if(!d.vent)return'elige su experiencia en ventas.';if(d.eqN===''||d.eqN==null||!(parseInt(d.eqN,10)>=0))return'anota la cantidad actual de personas en su equipo (0 si no tiene).';if(!d.desarrolla)return'indica si ya está desarrollando a alguien.';if(blank(d.sit))return'anota su situación actual.';if(!d.plan)return'registra el plan que eligió la persona.';return true},
  commit:(pid,d,p)=>{toTeam(p);p.ult=D0();p.fechaInsc=d.finsc;const ins=(S.ins||[]).find(x=>x.pid===pid);if(ins&&!ins.fecha){ins.fecha=d.finsc;ins.enrollmentDate=d.finsc}ensureDev(pid,{plan:d.plan,quiere:d.quiere.trim(),exp:d.exp,expTxt:d.expTxt||'',sit:d.sit.trim(),finsc:d.finsc,spons:d.spons,prod:d.prod,vent:d.vent,eqN:parseInt(d.eqN,10),desarrolla:d.desarrolla,desarrollaTxt:d.desarrollaTxt||''});logSeg({id:'sg_l1_'+cyId()+'_'+pid,pid,tipo:'desarrollo',res:'Plan elegido: '+d.plan,src:'lider1'})},
  summary:n=>n+' persona(s) en desarrollo'});
@@ -1810,7 +1848,7 @@ IMPL.pliderazgo[7]={
   <div class="c" style="margin-top:10px"><h3>Metas e incentivos (transversal)</h3>${ia.length?ia.map(k=>`<div class="m">• ${E(incName(k))}${(C.inc[k]||{}).premio?' · '+E(C.inc[k].premio):''} — en seguimiento en la app</div>`).join(''):'<div class="m">No tienes incentivos activos en la app.</div>'}${note('El avance de la app es capturado por ti; el resultado oficial lo confirma OMNILIFE.')}</div>`},
  check:()=>{const ev=F().ev||{};if(DIMS.some((_,i)=>!(ev.sc||{})[i]))return'Completa la autoevaluación (las 5 áreas).';if(!(ev.prio||'').trim())return'Define una prioridad para el siguiente periodo.';const ac=ev.acc||[];if(!ac.length||ac.some(a=>!(a.acc||'').trim()||!a.fecha))return'Agrega al menos una acción con su fecha.';return true},
  commit:()=>{const ev=F().ev,s=resumen30(),w=win();up('ev',{id:'ev_'+cyId()+'_'+D0(),fecha:D0(),ini:w.ini,fin:w.fin,sc:JSON.parse(JSON.stringify(ev.sc)),prio:ev.prio.trim(),acc:JSON.parse(JSON.stringify(ev.acc)),snap:{rev:s.rev,acu:s.acu,comprCreados:s.comprCreados,comprRev:s.comprRev,comprCum:s.comprCum,hab:s.hab,avanzaron:s.avanzaron,rec:s.rec,reu:s.reu,reco:s.reco,nuevosL:s.nuevosL,per:s.per},at:Date.now(),cy:cyId()});return'Evaluación del '+fd(D0())+' · prioridad: '+ev.prio.trim().slice(0,60)}};
-Object.assign(P3,{devs,dev,teamP,latestHab,latestAcu,resumen30,incNames,NIV,skillsFor,ruMsg,recMsg,rrMsg});
+Object.assign(P3,{L1,devs,dev,teamP,latestHab,latestAcu,resumen30,incNames,NIV,skillsFor,ruMsg,recMsg,rrMsg});
 Object.assign(A,{
 p3prio(e,v){const[pid,o]=v.split('|');const d=dev(pid)||{id:'dv_'+pid,pid,by:'yo',plan:'',since:D0()};d.prio=d.prio===o?'':o;up('dev',d)},
 p3link(){const f=F(),x=f.leader,c=f.child;S.tmp.p3lerr='';if(!x||!c)return;if(x===c){S.tmp.p3lerr='La persona no puede acompañarse a sí misma.';return}
@@ -1874,9 +1912,11 @@ formP=function(i){return _formP(i)+(i>=0?histP(S.people[i]):'')};
 Object.assign(A,{
 p3c(e,v){const k=v.indexOf('|'),path=v.slice(0,k),val=v.slice(k+1);setv(path,getv(path)===val?'':val)},
 p3m(e,v){const q=v.split('|'),path=q[0],val=q[1],max=+q[2]||0;const a=(getv(path)||[]).slice(),i=a.indexOf(val);if(i>=0)a.splice(i,1);else{if(max&&a.length>=max)return toast('Máximo '+max+' elementos.');a.push(val)}setv(path,a)},
+l1mode(e,v){P3.L1.mode(v)},l1save(e,v){P3.L1.save(v==='1')},l1usedup(){P3.L1.useDup()},l1cancel(){P3.L1.cancel()},
 p3rm(e,v){const k=v.indexOf('|'),path=v.slice(0,k),pid=v.slice(k+1);setv(path,(getv(path)||[]).filter(x=>x!==pid))},
-p3pick(e,v){const k=v.indexOf('|'),t=v.slice(0,k),pid=v.slice(k+1);applyTarget(t,pid);toast('Seleccionada: '+pname(pid))},
+p3pick(e,v){const k=v.indexOf('|'),t=v.slice(0,k),pid=v.slice(k+1);applyTarget(t,pid);if(t==='add:f/ppl'&&getv('f/nw'))getv('f/nw').m='';toast('Seleccionada: '+pname(pid))},
 p3newp(e,v){const q=v.split('|'),id=q[0],target=q[1],tipo=q[2],name=((S.tmp.p3q||{})[id]||'').trim(),tel=(S.tmp.p3t||{})[id]||'';if(name.length<2)return toast('Escribe el nombre de la persona.');
+ if(id==='l1')return P3.L1.open(name);
  const x=ensureP(name,tel,tipo||undefined,q[3]==='1');applyTarget(target,x.p.id);S.tmp.p3q[id]='';if(S.tmp.p3t)S.tmp.p3t[id]='';toast(x.created?'Persona nueva creada: '+x.p.nombre:'Ya existía en Personas: se seleccionó a '+x.p.nombre+' (sin duplicar).')},
 p3addrow(e,v){const k=v.indexOf('|'),path=v.slice(0,k);const a=(getv(path)||[]).slice();const last=path.split('/').pop();const row={id:nid('r')};if(last==='buy'){const pid=path.split('/')[2],d=F().d&&F().d[pid]||{};row.prod=d.prod||'';row.cant='1';row.precio='';row.fecha=D0()}a.push(row);setv(path,a)},
 p3delrow(e,v){const k=v.indexOf('|'),path=v.slice(0,k),id=v.slice(k+1);setv(path,(getv(path)||[]).filter(x=>x.id!==id))},
