@@ -852,7 +852,7 @@ const slug=n=>String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A
 const fdt=t=>{try{return new Date(t).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return String(t||'')}};
 const sOf=st=>{try{return st.r=='mixto'?[...C.routes.venta.steps,...C.routes[st.team?'l4x30':'c4x30'].steps]:((C.routes[st.r]||{}).steps||[])}catch(e){return[]}};
 function counts(st){const a=sOf(st),ld=isO(st.ld)?st.ld:{},tm=(st.L&&isO(st.L.team))?st.L.team:{};let ldn=0;Object.keys(ld).forEach(k=>{ldn+=L(ld[k])});
-return{nombre:(st.p&&st.p.n)||'',ruta:!st.r?'':st.r=='mixto'?'Mixto 30':((C.routes[st.r]||{}).name||String(st.r)),pasos:a.filter((_,k)=>st.res&&st.res[st.r+k]).length,total:a.length,personas:L(st.people),inscritos:L(st.ins),incentivos:TT(st.inc&&st.inc.act),juntas:TT(st.jt&&st.jt.att),rev:L(st.rev),lider:ldn,miembros:K(tm),reportes:Object.values(tm).reduce((n,m)=>n+L(m&&m.reports),0),ciclos:L(st.cycles),planes:(typeof CY!='undefined'?CY.nPlans(st):0),p3:(isO(st.p3)?Object.keys(st.p3).reduce((n,k)=>n+(Array.isArray(st.p3[k])?st.p3[k].length:0),0):0)}}
+return{nombre:(st.p&&st.p.n)||'',ruta:!st.r?'':st.r=='mixto'?'Mixto 30':((C.routes[st.r]||{}).base||(C.routes[st.r]||{}).name||String(st.r)),pasos:a.filter((_,k)=>st.res&&st.res[st.r+k]).length,total:a.length,personas:L(st.people),inscritos:L(st.ins),incentivos:TT(st.inc&&st.inc.act),juntas:TT(st.jt&&st.jt.att),rev:L(st.rev),lider:ldn,miembros:K(tm),reportes:Object.values(tm).reduce((n,m)=>n+L(m&&m.reports),0),ciclos:L(st.cycles),planes:(typeof CY!='undefined'?CY.nPlans(st):0),p3:(isO(st.p3)?Object.keys(st.p3).reduce((n,k)=>n+(Array.isArray(st.p3[k])?st.p3[k].length:0),0):0)}}
 /* ----- registros por sección (misma partición que usa la sincronización con la nube) ----- */
 const SECS=()=>{try{return CS.SEC||{}}catch(e){return{}}};
 const SL={profile:'Perfil',plan:'Ruta y equipo',activities:'Actividades y avance',people:'Personas e inscritos',meetings:'Juntas y revisiones',incentives:'Incentivos',progress:'Eventos y ciclos',plans:'Planes y ciclos (historial de planes)',settings:'Ajustes',team:'Liderazgo y equipo'};
@@ -1140,7 +1140,7 @@ const G=()=>{const o=S.p3=isO(S.p3)?S.p3:{};o.v=1;KEYS.forEach(k=>{if(!Array.isA
 const R=k=>(isO(S.p3)&&Array.isArray(S.p3[k]))?S.p3[k]:[];
 const up=(k,rec)=>{const a=G()[k],i=a.findIndex(x=>x.id===rec.id);if(i<0)a.push(rec);else a[i]=Object.assign(a[i],rec);return rec};
 const PP=id=>S.people.find(p=>String(p.id)===String(id));
-const pname=id=>{const p=PP(id);return p?p.nombre:(id==='yo'?'Yo':'Contacto no disponible')};
+const pname=id=>{const p=PP(id);return p?p.nombre:(id==='yo'?'Yo':(typeof id==='string'&&id.indexOf('n:')===0?id.slice(2):'Contacto no disponible'))};
 /* ----- nombres y apellidos por separado (compatibles con el campo anterior «nombre») ----- */
 const splitName=full=>{const w=String(full||'').trim().split(/\s+/).filter(Boolean);if(w.length<=1)return{nombres:w[0]||'',apellidos:''};if(w.length==2)return{nombres:w[0],apellidos:w[1]};if(w.length==3)return{nombres:w[0],apellidos:w.slice(1).join(' ')};return{nombres:w.slice(0,w.length-2).join(' '),apellidos:w.slice(-2).join(' ')}};
 const splitInto=p=>{if(p&&p.nombres==null&&p.apellidos==null){const s=splitName(p.nombre);p.nombres=s.nombres;p.apellidos=s.apellidos}return p};
@@ -1204,6 +1204,9 @@ function register(){
   mk('Crea tu rutina personalizada','Acuerda los hábitos y registra los productos que decidiste usar con su cantidad, horario, frecuencia y duración prevista.','1) Elige 2 o 3 hábitos. 2) Para cada producto: cantidad, momento u horario, frecuencia y duración. 3) Observaciones. Solo información oficial; nada de promesas de salud.','Hábito: 8 vasos de agua. Producto: una porción según su etiqueta, en el desayuno, todos los días, 30 días.'),
   mk('Registra tu uso diario','Es un registro recurrente por fecha: cada día anota productos y hábitos, cumplimiento, agua, actividad, energía, digestión, descanso y observaciones. Sigue disponible todo el ciclo.','1) Elige el día (no futuro). 2) Marca hábitos y productos. 3) Anota agua, actividad, energía, digestión y descanso. 4) Observaciones. Puedes editar días anteriores.','Hoy: agua 8 vasos, caminé 30 minutos, energía alta, digestión bien, descanso regular.'),
   mk('Revisa y cierra tu ciclo','Haz revisiones semanales y, a partir del día 30, el cierre del ciclo con resultado final, aprendizajes y decisión.','1) Guarda tu revisión semanal (cambios, dificultades, ajustes y acción). 2) Desde el día 30: resultado final, aprendizajes y decisión (continuar, ajustar o terminar). 3) El testimonio es opcional y requiere tu consentimiento. 4) Puedes iniciar otro ciclo sin borrar este.','Semana 1: cumplí 5 de 7 días. Ajuste: dejar el agua lista desde la noche.')]};
+ /* v6: el título del plan de bienestar depende de para quién es (el nombre base, en selector/ciclos/respaldos, no cambia) */
+Object.defineProperty(C.routes.pbienestar,'base',{value:'BIENESTAR · Usa, conoce y comparte',enumerable:false,configurable:true,writable:true});
+Object.defineProperty(C.routes.pbienestar,'name',{enumerable:true,configurable:true,get(){try{const f=(((S.g||{}).pbienestar0||{}).d||{}).f||{};const rec=f.rec?(((S.p3||{}).bien)||[]).find(x=>x.id===f.rec):null;const m=rec?(rec.owner==='yo'?'yo':'acomp'):f.modo;if(m==='yo')return'MI BIENESTAR · Usa, conoce y comparte';if(m==='acomp')return'BIENESTAR DE ACOMPAÑAMIENTO · Acompaña y comparte'}catch(e){}return'BIENESTAR · Usa, conoce y comparte'},set(v){}});
  C.routes.pventas={name:'VENTAS · Presenta, vende y fideliza',steps:[
   mk('Haz tu lista y conoce el contexto','Crea o elige personas desde el registro maestro y anota cómo las conoces, su contexto, ocupación, qué podría interesarles, medio de contacto, último contacto y estado.','1) Busca a la persona en Personas o créala si no existe (sin duplicar). 2) Nombres y apellidos. 3) Cómo la conoces, contexto, ocupación e interés. 4) Medio de contacto, último contacto y estado.','Laura Gómez: amiga del gimnasio, instructora, podría interesarle energía; contacto por WhatsApp.'),
   mk('Inicia la conversación','Registra el canal, el mensaje o conversación, su respuesta, su interés inicial, la objeción (si hay) y tu próxima acción con fecha.','1) Elige a la persona. 2) Usa o edita un guion natural. 3) Registra canal, mensaje, respuesta e interés inicial. 4) Objeción si existe. 5) Próxima acción y fecha. Si dice que no, se respeta.','Laura, por WhatsApp: respondió con interés medio; próxima acción: llamarle el jueves.'),
@@ -1471,7 +1474,7 @@ function bwActRows(r,n,flat){if(!r)return{has:false,html:''};const has=bwHas(r,n
  return{has:true,html:h}}
 /* ----- actividad del plan: elige para quién (actividad 1) y delega en las secciones ----- */
 function owner1(){const f=F(0),r=planRec();
- if(r)return`<div class="c"><b>Plan de bienestar para: ${E(r.owner==='yo'?'Mí':pname(r.owner))}</b><div class="m">Los datos de este plan pertenecen a ${r.owner==='yo'?'ti':E(pname(r.owner))}.</div></div>`;
+ if(r)return`<div class="c"><b>${r.owner==='yo'?'MI BIENESTAR':'BIENESTAR DE ACOMPAÑAMIENTO · '+E(pname(r.owner))}</b><div class="m">Los datos de este plan pertenecen a ${r.owner==='yo'?'ti':E(pname(r.owner))}.</div></div>`;
  return`<div class="c"><label>¿PARA QUIÉN ES ESTE PLAN?</label>${chips('f/modo',[['yo','Mi bienestar / Para mí'],['acomp','Acompañar a alguien']],f.modo)}
  ${f.modo=='acomp'?`<div class="m" style="margin-top:6px">Elige a la persona. Sus datos se guardan para ella, no para ti.</div>${f.sel?`<div class="m">Persona elegida: <b>${E(pname(f.sel))}</b></div>`:''}${pick('bwsel','set:f/sel','Prospecto')}`:''}
  ${f.modo=='yo'||(f.modo=='acomp'&&f.sel)?`<button class="b" data-a="p3bwstart">Comenzar con los datos iniciales</button>`:''}</div>`}
@@ -1710,10 +1713,10 @@ const TX=(b,k,l,ph,rows)=>`${lab(l)}${rows?area(b+k,ph||'',rows):inp(b+k,ph||'')
 const L1rest=(b,d)=>`${lab('EXPERIENCIA PREVIA')}${chips(b+'exp',EXPS,d.exp)}${lab('DETALLE DE SU EXPERIENCIA (opcional)')}${inp(b+'expTxt','')}${lab('CONOCIMIENTO DE PRODUCTOS')}${chips(b+'prod',CONOC,d.prod)}${lab('EXPERIENCIA EN VENTAS')}${chips(b+'vent',VENT,d.vent)}
   ${lab('CANTIDAD ACTUAL DE PERSONAS EN SU EQUIPO')}${inp(b+'eqN','Ej.: 0','number','inputmode="numeric" min="0" step="1"')}${lab('¿YA ESTÁ DESARROLLANDO A ALGUIEN?')}${chips(b+'desarrolla',['Sí','No'],d.desarrolla)}${d.desarrolla=='Sí'?`${lab('¿A QUIÉN? (opcional)')}${inp(b+'desarrollaTxt','Nombres')}`:''}
   ${lab('SITUACIÓN ACTUAL')}${area(b+'sit','Tiempo disponible, trabajo, apoyo en casa…',2)}${lab('PLAN QUE ELIGE LA PERSONA')}${chips(b+'plan',PLANES,d.plan)}`;
-const spBox=(b,spons,pickId,sug)=>{const ok=spons&&spons!=='yo'&&spons!=='otro'&&PP(spons);
+const spBox=(b,spons,pickId,sug)=>{const ok=spons&&spons!=='yo'&&spons!=='otro'&&(PP(spons)||String(spons).indexOf('n:')===0);
  return`${chips(b+'spons',[['yo','Yo']],spons)}${ok?`<div class="c" style="margin-top:8px"><div class="m">Patrocinador</div><div style="font-size:1.15em;font-weight:700;margin:2px 0 8px">${E(pname(spons))}</div><button class="b sm t" style="width:auto" data-a="p3c" data-v="${ATTR(b+'spons')}|${ATTR(spons)}">Cambiar patrocinador</button></div>`:spons==='yo'?'':pick(pickId,'set:'+b+'spons','Miembro del equipo',sug||null,{label:'Buscar al patrocinador (solo si no eres tú)',nophone:true})}`};
 const nwG=()=>{const f=F();return isO(f.nw)?f.nw:(f.nw={})};
-const nwMissing=n=>{const m=[];if(blank(n.nombres))m.push('nombre');if(blank(n.apellidos))m.push('apellido');if(!n.finsc||n.finsc>D0())m.push(n.finsc&&n.finsc>D0()?'fecha de inscripción (no puede ser futura)':'fecha de inscripción');if(!(n.spons==='yo'||(n.spons&&n.spons!=='otro'&&PP(n.spons))))m.push('patrocinador');if(blank(n.quiere))m.push('qué quiere lograr');return m};
+const nwMissing=n=>{const m=[];if(blank(n.nombres))m.push('nombre');if(blank(n.apellidos))m.push('apellido');if(!n.finsc||n.finsc>D0())m.push(n.finsc&&n.finsc>D0()?'fecha de inscripción (no puede ser futura)':'fecha de inscripción');if(!(n.spons==='yo'||(n.spons&&n.spons!=='otro'&&(PP(n.spons)||String(n.spons).indexOf('n:')===0))))m.push('patrocinador');if(blank(n.quiere))m.push('qué quiere lograr');return m};
 const nwFull=n=>((n.nombres||'').trim()+' '+(n.apellidos||'').trim()).trim();
 function nwSave(){const n=nwG(),miss=nwMissing(n);
  if(miss.length)return note('Para poder guardar falta: <b>'+E(miss.join(', '))+'</b>.');
@@ -1748,7 +1751,7 @@ const L1={
 document.addEventListener('input',e=>{const d=e.target&&e.target.dataset;const mm=d&&(d.p3||d.p3pn)&&/^f\/d\/([^/|]+)\//.exec(d.p3||'');if(mm)setTimeout(()=>{const el=document.getElementById('l1ps_'+mm[1]),p=PP(mm[1]);if(el&&p)el.innerHTML=L1psave(mm[1],dd(mm[1]),p)},0);if(d&&d.p3pn){const pid=d.p3pn.split('|')[0];setTimeout(()=>{const el=document.getElementById('l1ps_'+pid),p=PP(pid);if(el&&p)el.innerHTML=L1psave(pid,dd(pid),p)},0)}if(d&&d.p3&&d.p3.indexOf('f/nw/')===0){const n=nwG();if(n.dup){n.dup='';}setTimeout(L1.live,0)}});
 
 const L1fcheck=(pid,d,p)=>{P3.splitInto(p);if(blank(p.nombres))return'escribe sus nombres (y apellidos si los tiene).';if(!d.finsc)return'anota la fecha de inscripción.';if(d.finsc>D0())return'la fecha de inscripción no puede ser futura.';if(!d.spons||d.spons==='otro')return'elige a su patrocinador.';if(d.spons===pid)return'una persona no puede ser su propio patrocinador.';if(blank(d.quiere))return'anota lo que quiere lograr.';if(!d.exp)return'elige su experiencia previa.';if(!d.prod)return'elige su conocimiento de productos.';if(!d.vent)return'elige su experiencia en ventas.';if(d.eqN===''||d.eqN==null||!(parseInt(d.eqN,10)>=0))return'anota la cantidad actual de personas en su equipo (0 si no tiene).';if(!d.desarrolla)return'indica si ya está desarrollando a alguien.';if(blank(d.sit))return'anota su situación actual.';if(!d.plan)return'registra el plan que eligió la persona.';return true};
-const L1sum=(pid,d,p)=>{const sp=d.spons==='yo'?'Yo':(PP(d.spons)?pname(d.spons):'—');
+const L1sum=(pid,d,p)=>{const sp=d.spons==='yo'?'Yo':(d.spons?pname(d.spons):'—');
  return`<div class="m">Patrocinador: <b>${E(sp)}</b></div><div style="margin-top:6px"><button class="b sm t" style="width:auto;margin:0 6px 0 0" data-a="l1pdet" data-v="${ATTR(pid)}">${d.det?'Ocultar detalles':'Ver detalles'}</button><button class="b sm t" style="width:auto;margin:0" data-a="l1pedit" data-v="${ATTR(pid)}">Editar</button></div>${d.det?`<div class="m" style="margin-top8px">Inscripción: <b>${E(fd(d.finsc))}</b><br>Quiere lograr: <b>${E(d.quiere)}</b><br>Experiencia previa: <b>${E(d.exp)}</b>${d.expTxt?' ('+E(d.expTxt)+')':''}<br>Conocimiento de productos: <b>${E(d.prod)}</b><br>Experiencia en ventas: <b>${E(d.vent)}</b><br>Personas en su equipo: <b>${E(d.eqN)}</b><br>¿Ya desarrolla a alguien?: <b>${E(d.desarrolla)}</b>${d.desarrollaTxt?' ('+E(d.desarrollaTxt)+')':''}<br>Situación: <b>${E(d.sit)}</b><br>Plan que elige: <b>${E(d.plan)}</b></div>`.replace('margin-top8px','margin-top:8px'):''}`};
 const L1psave=(pid,d,p)=>{const m=L1fcheck(pid,d,p);return m===true?`<button class="b s" style="margin-top:10px" data-a="l1psave" data-v="${ATTR(pid)}">Guardar persona a desarrollar</button>`:note('Para guardar a esta persona falta: '+E(String(m).replace(/\.$/,''))+'.')};
 const anySaved=()=>(F().ppl||[]).some(pid=>PP(pid)&&dd(pid).saved);
@@ -1955,9 +1958,23 @@ const delBlock=p=>{if(!p||!p.id)return null;try{INC2.repairPend()}catch(e){}
  const l=P3.linked(p.id),t=[],pend=((S.inc.v2||{}).pend||[]).filter(x=>x.cand===p.id&&S.ins.some(s=>s.id===x.insId));
  if(l.ins)t.push('tu estructura de incentivos');if(l.reto)t.push('el seguimiento de Reto 90');if(pend.length)t.push('una confirmación pendiente de tu estructura (mismo nombre)');
  return t.length?{t,l,pend}:null};
+/* v6: al eliminar a una persona se borran sus datos propios; en las demás personas solo queda su nombre como nota de patrocinador */
+const cascadeDel=(id,nm)=>{const o=P3.G(),T='n:'+nm;
+ const bw=o.bien.filter(r=>r.owner===id).map(r=>r.id);
+ try{const f0=((S.g.pbienestar0||{}).d||{}).f||{};
+  if(f0.rec&&bw.includes(f0.rec)){Object.keys(S.g).filter(k=>k.indexOf('pbienestar')===0).forEach(k=>delete S.g[k]);[S.res,S.acts].forEach(m=>{if(m)Object.keys(m).filter(k=>/^pbienestar\d/.test(k)).forEach(k=>delete m[k])})}}catch(e){}
+ o.bien=o.bien.filter(r=>r.owner!==id);
+ ['seg','acu','hab','rec','dev','reu','ev'].forEach(k=>{o[k]=o[k].filter(x=>x.pid!==id)});
+ P3.KEYS.forEach(k=>o[k].forEach(x=>{Object.keys(x).forEach(f=>{if(Array.isArray(x[f]))x[f]=x[f].filter(y=>y!==id&&!(y&&typeof y==='object'&&y.pid===id))});if(x.refPor===id){x.refPor='';x.refTxt=nm}}));
+ o.dev.forEach(x=>{if(x.spons===id)x.spons=T;if(x.by===id){x.by='yo';x.byTxt=nm}});
+ o.compras.forEach(x=>{if(x.pid===id)x.pnom=nm});
+ const scrub=g=>{if(!g||typeof g!=='object')return;if(Array.isArray(g.ppl))g.ppl=g.ppl.filter(x=>x!==id);if(g.d&&g.d[id])delete g.d[id];const f=g.d&&g.d.f;
+  if(f&&typeof f==='object'){if(Array.isArray(f.ppl))f.ppl=f.ppl.filter(x=>x!==id);if(f.d){delete f.d[id];Object.keys(f.d).forEach(p=>{if(f.d[p]&&f.d[p].spons===id)f.d[p].spons=T})}if(f.sel===id)f.sel='';if(f.nw&&f.nw.spons===id)f.nw.spons=T}};
+ Object.values(S.g||{}).forEach(scrub);(S.cycles||[]).forEach(c=>{if(c&&c.snap)Object.values(c.snap).forEach(scrub)})};
+const sponsoredBy=id=>P3.G().dev.filter(x=>x.spons===id&&x.pid!==id).length;
 const _delok=A.delok;
 A.delok=function(e,v){const p=S.people[+v],bl=delBlock(p);if(bl){closeSheet();toast('No se eliminó: «'+p.nombre+'» sigue ligada a '+bl.t.join(' y ')+'.');return}
- const id=p&&p.id;const r=_delok(e,v);
+ const id=p&&p.id;if(id)try{cascadeDel(id,p.nombre)}catch(er){window.__p3err=(window.__p3err||[]).concat(String(er&&er.stack||er))}const r=_delok(e,v);
  /* historial de estructura archivado: se conserva, sin persona ligada (sin id inválido) */
  try{if(id&&S.inc&&S.inc.v2&&Array.isArray(S.inc.v2.insArch))S.inc.v2.insArch.forEach(a=>{if(a.pid===id)a.pid=''})}catch(er){}
  return r};
@@ -1968,16 +1985,18 @@ A.delP=function(e,v){const p=S.people[+v];if(!p)return;const bl=delBlock(p);
   ${bl.l.ins?`<div class="m" style="margin:4px 0">• «Retirar de mi estructura» la archiva con todo su historial (puntos, niveles, fechas); sigue en Personas y se puede restaurar.</div>${mine.map(x=>`<button class="b s" data-a="insret" data-v="${ATTR(x.id)}">Retirar de mi estructura${mine.length>1?' ('+E(fd(x.fecha||''))+')':''}</button>`).join('')}`:''}
   ${bl.l.reto?'<div class="m" style="margin:4px 0">• Quitar su seguimiento de Reto 90 borra los pesos y compras de ese reto. Si quieres conservarlos, exporta antes un respaldo.</div><button class="b s" data-a="delgo" data-v="reto">Ir a Reto 90</button>':''}
   <button class="b t" data-a="shx">Entendido</button>`);return}
- const arc=archN(p.id);
- const n=k=>((S.p3&&S.p3[k])||[]).filter(x=>(k==='bien'?x.owner:x.pid)===p.id).length,c=n('compras'),sg=n('seg'),b=n('bien');
- if(!c&&!sg&&!b&&!arc)return _delP(e,v);
- openSheet(`<div style="font-size:18px;font-weight:700">¿Eliminar a ${E(p.nombre)}?</div><div class="m" style="margin:6px 0">Tiene ${c} compra(s), ${sg} seguimiento(s), ${b} registro(s) de bienestar${arc?' y '+arc+' registro(s) de estructura archivados':''}. Se quitará de Personas, pero esos registros se conservan en tu historial sin una persona ligada. No se puede deshacer.</div><button class="b" style="background:#dc2626" data-a="delok" data-v="${v}">Eliminar de todos modos</button><button class="b t" data-a="shx">Cancelar</button>`)};
-Object.assign(A,{delgo(e,v){closeSheet();if(v==='pend'&&typeof A.incvinc==='function'){A.incvinc();return}if(v==='reto'&&typeof A.retov==='function'){S.inc.act.reto90=true;A.retov(null,'');return}if(typeof A.inc==='function')A.inc()}});
+ const arc=archN(p.id),L=P3.linked(p.id),sp=sponsoredBy(p.id);
+ const own=[L.bien&&L.bien+' plan(es)/registro(s) de bienestar',L.seg&&L.seg+' seguimiento(s)',L.dev&&L.dev+' relación(es) de equipo',L.acu&&L.acu+' acuerdo(s)',L.hab&&L.hab+' habilidad(es)',L.rec&&L.rec+' reconocimiento(s)'].filter(Boolean);
+ if(!own.length&&!L.compras&&!arc&&!sp)return _delP(e,v);
+ openSheet(`<div style="font-size:18px;font-weight:700">¿Eliminar a ${E(p.nombre)}?</div><div class="m" style="margin:6px 0">Se eliminará a la persona${own.length?' y también todo lo suyo: '+own.join(', '):''}.</div>${L.compras?`<div class="m" style="margin:6px 0">Sus ${L.compras} compra(s) se conservan en tus ventas, sin nombre.</div>`:''}${sp?`<div class="m" style="margin:6px 0">${sp} persona(s) la tienen como patrocinador: conservan sus propios datos y el nombre «${E(p.nombre)}» queda solo como nota de patrocinador.</div>`:''}${arc?`<div class="m" style="margin:6px 0">${arc} registro(s) de estructura archivados se conservan sin persona ligada.</div>`:''}<div class="m" style="margin:6px 0">No se puede deshacer.</div><button class="b" style="background:#dc2626" data-a="delok" data-v="${v}">Eliminar todo</button><button class="b t" data-a="shx">Cancelar</button>`)};Object.assign(A,{delgo(e,v){closeSheet();if(v==='pend'&&typeof A.incvinc==='function'){A.incvinc();return}if(v==='reto'&&typeof A.retov==='function'){S.inc.act.reto90=true;A.retov(null,'');return}if(typeof A.inc==='function')A.inc()}});
 /* guardar de inmediato al salir de un campo o de la app (sin esperar el retardo del teclado) */
 const flush=()=>{try{if(!tm)return;clearTimeout(tm);tm=null;save()}catch(e){}};
 window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flush()});document.addEventListener('focusout',e=>{const d=e.target&&e.target.dataset;if(d&&(d.p3!=null||d.p3day!=null))flush()});
 Object.assign(P3,{rows,histP,flat,page,started});
 })();
+
+/* v6: el campo de fecha no debe salirse de la tarjeta en el iPhone */
+try{const st=document.createElement('style');st.textContent='input[type=date]{box-sizing:border-box;width:100%;max-width:100%;min-width:0;-webkit-appearance:none;appearance:none}';document.head.appendChild(st)}catch(e){}
 
 /* ===== METAS E INCENTIVOS v2 (transversal a los 3 planes) =====
    Datos nuevos SOLO dentro de claves ya sincronizadas: S.inc.v2 (sección «incentives»), S.ins[].pid/ml/mcv (sección «people»).
@@ -2432,7 +2451,7 @@ const canon=x=>{if(Array.isArray(x))return'['+x.map(canon).join(',')+']';if(isO(
 const h32=s=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return(h>>>0).toString(36)};
 const stepsOf=(r,team)=>r=='mixto'?[...C.routes.venta.steps,...C.routes[team?'l4x30':'c4x30'].steps]:((C.routes[r]||{}).steps||[]);
 const goalOf=(r,team)=>r=='venta'?0:r=='c4x30'?1:r=='l4x30'?2:r=='mixto'?(team?4:3):r=='bienestar'?5:r=='pbienestar'?6:r=='pventas'?7:r=='pliderazgo'?8:-1;
-const rutaName=(r,team)=>r=='mixto'?'MIXTO 30 · Ventas + '+(team?'Liderazgo':'Construcción'):((C.routes[r]||{}).name||String(r));
+const rutaName=(r,team)=>r=='mixto'?'MIXTO 30 · Ventas + '+(team?'Liderazgo':'Construcción'):((C.routes[r]||{}).base||(C.routes[r]||{}).name||String(r));
 function cst(res,r,team){const n=stepsOf(r,team).length;let d=0,last='';for(let i=0;i<n;i++){const x=res&&res[r+i];if(x){d++;if(x.f&&String(x.f)>last)last=String(x.f)}}return{total:n,done:d,pct:n?Math.round(d/n*100):0,last}}
 const today=()=>new Date().toISOString().slice(0,10);
 const cid1=(uid,r,team)=>'cy_'+h32(String(uid||'')+'|'+r+'|'+(team?1:0))+'_1';
