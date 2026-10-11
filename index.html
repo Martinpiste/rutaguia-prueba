@@ -1970,6 +1970,7 @@ const cascadeDel=(id,nm)=>{const o=P3.G(),T='n:'+nm;
  o.compras.forEach(x=>{if(x.pid===id)x.pnom=nm});
  const scrub=g=>{if(!g||typeof g!=='object')return;if(Array.isArray(g.ppl))g.ppl=g.ppl.filter(x=>x!==id);if(g.d&&g.d[id])delete g.d[id];const f=g.d&&g.d.f;
   if(f&&typeof f==='object'){if(Array.isArray(f.ppl))f.ppl=f.ppl.filter(x=>x!==id);if(f.d){delete f.d[id];Object.keys(f.d).forEach(p=>{if(f.d[p]&&f.d[p].spons===id)f.d[p].spons=T})}if(f.sel===id)f.sel='';if(f.nw&&f.nw.spons===id)f.nw.spons=T}};
+ try{const items=(S.cy&&S.cy.items)||[];S.cy.items=items.filter(it=>{if(it.id===S.cyid||it.id===S.cy.active)return true;const g=it.data&&it.data.g&&it.data.g.pbienestar0,rid=g&&g.d&&g.d.f&&g.d.f.rec;return !(rid&&bw.includes(rid))});S.cy.items.forEach(it=>{if(it.data&&it.data.g)Object.values(it.data.g).forEach(scrub)})}catch(e){}
  Object.values(S.g||{}).forEach(scrub);(S.cycles||[]).forEach(c=>{if(c&&c.snap)Object.values(c.snap).forEach(scrub)})};
 const sponsoredBy=id=>P3.G().dev.filter(x=>x.spons===id&&x.pid!==id).length;
 const _delok=A.delok;
@@ -2597,7 +2598,11 @@ sync()}
 /* ===== pantallas ===== */
 const fd=s=>{if(!s)return'—';try{const [y,m,d]=String(s).slice(0,10).split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'})}catch(e){return String(s)}};
 const ST={activo:'Activo',pausado:'Pausado',completado:'Completado'};
-const title=it=>E(it.ruta||rutaName(it.r,it.team))+' · Ciclo '+(it.n||1);
+/* v6: los planes de bienestar se distinguen por tipo (MI BIENESTAR / BIENESTAR DE ACOMPAÑAMIENTO · nombre) en vez de «Ciclo n» */
+const bwRecOf=it=>{try{const P=typeof P3!=='undefined'?P3:null;if(!P||it.r!=='pbienestar')return null;let id=null;if(it.id===S.cyid){const f=((((S.g||{}).pbienestar0)||{}).d||{}).f||{};id=f.rec}else{const g=it.data&&it.data.g&&it.data.g.pbienestar0;id=g&&g.d&&g.d.f&&g.d.f.rec}
+ return (id&&P.recOf(id))||P.R('bien').find(x=>x.cy===it.id)||null}catch(e){return null}};
+const bwLabel=it=>{const r=bwRecOf(it);if(!r)return'';return r.owner==='yo'?'MI BIENESTAR':'BIENESTAR DE ACOMPAÑAMIENTO · '+(typeof P3!=='undefined'?P3.pname(r.owner):'')};
+const title=it=>{const l=bwLabel(it);if(!l)return E(it.ruta||rutaName(it.r,it.team))+' · Ciclo '+(it.n||1);const same=(S.cy?S.cy.items:[]).filter(x=>x.r==='pbienestar'&&bwLabel(x)===l);return E(l)+(same.length>1?' · Ciclo '+(it.n||1):'')};
 const mine=g=>(S.cy?S.cy.items:[]).filter(x=>x.goal===g);
 const live=it=>it.id===S.cyid;
 const bk=()=>`<button class="b t sm" data-a="cerrar">← Volver</button>`;
