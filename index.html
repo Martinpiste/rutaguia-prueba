@@ -1970,6 +1970,7 @@ const cascadeDel=(id,nm)=>{const o=P3.G(),T='n:'+nm;
  o.compras.forEach(x=>{if(x.pid===id)x.pnom=nm});
  const scrub=g=>{if(!g||typeof g!=='object')return;if(Array.isArray(g.ppl))g.ppl=g.ppl.filter(x=>x!==id);if(g.d&&g.d[id])delete g.d[id];const f=g.d&&g.d.f;
   if(f&&typeof f==='object'){if(Array.isArray(f.ppl))f.ppl=f.ppl.filter(x=>x!==id);if(f.d){delete f.d[id];Object.keys(f.d).forEach(p=>{if(f.d[p]&&f.d[p].spons===id)f.d[p].spons=T})}if(f.sel===id)f.sel='';if(f.nw&&f.nw.spons===id)f.nw.spons=T}};
+ try{window.CY&&CY.cleanBw&&CY.cleanBw(true)}catch(e){}
  try{const items=(S.cy&&S.cy.items)||[];S.cy.items=items.filter(it=>{if(it.id===S.cyid||it.id===S.cy.active)return true;const g=it.data&&it.data.g&&it.data.g.pbienestar0,rid=g&&g.d&&g.d.f&&g.d.f.rec;return !(rid&&bw.includes(rid))});S.cy.items.forEach(it=>{if(it.data&&it.data.g)Object.values(it.data.g).forEach(scrub)})}catch(e){}
  Object.values(S.g||{}).forEach(scrub);(S.cycles||[]).forEach(c=>{if(c&&c.snap)Object.values(c.snap).forEach(scrub)})};
 const sponsoredBy=id=>P3.G().dev.filter(x=>x.spons===id&&x.pid!==id).length;
@@ -2602,7 +2603,13 @@ const ST={activo:'Activo',pausado:'Pausado',completado:'Completado'};
 const bwRecOf=it=>{try{const P=typeof P3!=='undefined'?P3:null;if(!P||it.r!=='pbienestar')return null;let id=null;if(it.id===S.cyid){const f=((((S.g||{}).pbienestar0)||{}).d||{}).f||{};id=f.rec}else{const g=it.data&&it.data.g&&it.data.g.pbienestar0;id=g&&g.d&&g.d.f&&g.d.f.rec}
  return (id&&P.recOf(id))||P.R('bien').find(x=>x.cy===it.id)||null}catch(e){return null}};
 const bwLabel=it=>{const r=bwRecOf(it);if(!r)return'';return r.owner==='yo'?'MI BIENESTAR':'BIENESTAR DE ACOMPAÑAMIENTO · '+(typeof P3!=='undefined'?P3.pname(r.owner):'')};
-const title=it=>{const l=bwLabel(it);if(!l)return E(it.ruta||rutaName(it.r,it.team))+' · Ciclo '+(it.n||1);const same=(S.cy?S.cy.items:[]).filter(x=>x.r==='pbienestar'&&bwLabel(x)===l);return E(l)+(same.length>1?' · Ciclo '+(it.n||1):'')};
+/* v6: quita planes de bienestar huérfanos (su registro ya no existe) y, al eliminar una persona, los vacíos sin avance */
+function cleanBw(emptyToo){try{const c=S.cy;if(!c||!Array.isArray(c.items)||typeof P3==='undefined')return;
+ c.items=c.items.filter(it=>{if(it.r!=='pbienestar'||it.id===c.active||it.id===S.cyid)return true;const g=it.data&&it.data.g&&it.data.g.pbienestar0,rid=g&&g.d&&g.d.f&&g.d.f.rec;
+  if(rid)return !!P3.recOf(rid);
+  if(emptyToo){const res=(it.data&&it.data.res)||{};return (it.done||0)>0||Object.keys(res).some(k=>/^pbienestar\d/.test(k))}
+  return true})}catch(e){}}
+const title=it=>{const l=bwLabel(it)||(it.r==='pbienestar'?'BIENESTAR · sin definir (elige para quién es)':'');if(!l)return E(it.ruta||rutaName(it.r,it.team))+' · Ciclo '+(it.n||1);const same=(S.cy?S.cy.items:[]).filter(x=>x.r==='pbienestar'&&(bwLabel(x)||'BIENESTAR · sin definir (elige para quién es)')===l);return E(l)+(same.length>1?' · Ciclo '+(it.n||1):'')};
 const mine=g=>(S.cy?S.cy.items:[]).filter(x=>x.goal===g);
 const live=it=>it.id===S.cyid;
 const bk=()=>`<button class="b t sm" data-a="cerrar">← Volver</button>`;
@@ -2654,7 +2661,7 @@ if(cur)det+=`<div class="m" style="margin-bottom:8px">Se guardará: <b>${title(c
 openSheet(`<div style="font-size:18px;font-weight:700">¿Estás seguro de que deseas cambiar de plan?</div><div class="m" style="margin:6px 0 10px">Guardaremos tu plan actual con todas sus actividades, respuestas y progreso. Tus contactos y demás registros permanecerán disponibles.</div>${det}<button class="b" data-a="cyGo">Confirmar cambio</button><button class="b t" data-a="cyCancel">Cancelar</button>`)}
 Object.assign(A,{
 cyChange(){S.tmp.cyx=null;S.tmp.cyrep=0;S.v=pickV},
-cyList(){closeSheet();S.v=listV},
+cyList(){closeSheet();cleanBw(false);S.v=listV},
 cyPick(e,v){const g=+v;S.tmp.cyg=g;if(S.tmp.cyrep)confirmSheet('new',g);else if(mine(g).length)S.v=abV;else confirmSheet('new',g)},
 cyNew(){confirmSheet('new',S.tmp.cyg)},
 cyChoose(){S.v=chooseV},
@@ -2673,7 +2680,7 @@ if(g<0){const a=steps(),snap={};a.forEach((_,i)=>{const k=key(i);if(S.g[k])snap[
 if(g<6){S.tmp.cyrep=1;S.v=pickV;return}
 S.tmp.cyrep=1;confirmSheet('new',g)},
 askNew(g){S.tmp.cyrep=1;S.tmp.cyg=g;confirmSheet('new',g)}});
-return{isNew,canonState,orphan,materialize,nPlans,fix,sync,tidy,boot,onAssign,mergeRemote,beforeTake,stats:cst,cn,goalOf,itemFromState,bar:bar2,chip,get err(){return err},askNew:A.askNew,get msg(){return msg},_swap:swap,find,OBJ}})();
+return{isNew,canonState,orphan,materialize,nPlans,fix,sync,tidy,boot,onAssign,mergeRemote,beforeTake,stats:cst,cn,goalOf,itemFromState,bar:bar2,chip,get err(){return err},askNew:A.askNew,cleanBw,get msg(){return msg},_swap:swap,find,OBJ}})();
 window.CY=CY;
 try{CY.boot()}catch(e){}
 
