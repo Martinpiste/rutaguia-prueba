@@ -1973,6 +1973,8 @@ const cascadeDel=(id,nm)=>{const o=P3.G(),T='n:'+nm;
  try{window.CY&&CY.cleanBw&&CY.cleanBw(true)}catch(e){}
  try{const items=(S.cy&&S.cy.items)||[];S.cy.items=items.filter(it=>{if(it.id===S.cyid||it.id===S.cy.active)return true;const g=it.data&&it.data.g&&it.data.g.pbienestar0,rid=g&&g.d&&g.d.f&&g.d.f.rec;return !(rid&&bw.includes(rid))});S.cy.items.forEach(it=>{if(it.data&&it.data.g)Object.values(it.data.g).forEach(scrub)})}catch(e){}
  Object.values(S.g||{}).forEach(scrub);(S.cycles||[]).forEach(c=>{if(c&&c.snap)Object.values(c.snap).forEach(scrub)})};
+/* v8: limpia planes de bienestar de personas que ya no existen (restos de versiones anteriores) */
+P3.purgeOrphans=()=>{try{if(!S.p3||!Array.isArray(S.p3.bien)||!S.p3.bien.length)return 0;const o=P3.G(),ids=new Set((S.people||[]).map(p=>String(p.id)));const bad=[];o.bien.forEach(r=>{if(r.owner&&r.owner!=='yo'&&!ids.has(String(r.owner))&&!bad.includes(r.owner))bad.push(r.owner)});bad.forEach(id=>cascadeDel(id,'Persona eliminada'));return bad.length}catch(e){window.__p3err=(window.__p3err||[]).concat(String(e&&e.stack||e));return 0}};
 const sponsoredBy=id=>P3.G().dev.filter(x=>x.spons===id&&x.pid!==id).length;
 const _delok=A.delok;
 A.delok=function(e,v){const p=S.people[+v],bl=delBlock(p);if(bl){closeSheet();toast('No se eliminó: «'+p.nombre+'» sigue ligada a '+bl.t.join(' y ')+'.');return}
@@ -2632,7 +2634,7 @@ const leg=(S.cycles||[]).map((x,i)=>[x,i]).filter(([x])=>!x.cyid);
 return`${bk()}<h1>Mis planes anteriores</h1><p class="m">Cada plan que empiezas se guarda como un ciclo independiente. Aquí solo consultas; para seguir con uno, usa «Retomar este plan».</p>
 ${act?`<div class="m" style="margin:10px 2px 4px">PLAN ACTUAL</div>${card(act)}`:''}
 <div class="m" style="margin:10px 2px 4px">ANTERIORES</div>
-${prev.map(it=>card(it,`<div class="row2"><button class="b sm s" style="margin:0" data-a="cyView" data-v="${E(it.id)}">Ver detalles</button>${it.status=='pausado'?`<button class="b sm" style="margin:0" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`:''}</div>`)).join('')||'<div class="c"><div class="m">Todavía no tienes planes anteriores. Cuando cambies de plan, el actual aparecerá aquí.</div></div>'}
+${prev.map(it=>card(it,`<div class="row2"><button class="b sm s" style="margin:0" data-a="cyView" data-v="${E(it.id)}">Ver detalles</button>${it.status=='pausado'?`<button class="b sm" style="margin:0" data-a="cyResume" data-v="${E(it.id)}">Retomar este plan</button>`:''}</div><button class="b sm t" style="margin:8px 0 0" data-a="cyDel" data-v="${E(it.id)}">Eliminar este plan</button>`)).join('')||'<div class="c"><div class="m">Todavía no tienes planes anteriores. Cuando cambies de plan, el actual aparecerá aquí.</div></div>'}
 ${leg.length?`<div class="m" style="margin:14px 2px 4px">GUARDADOS ANTES DE ESTA VERSIÓN</div>${leg.map(([x,i])=>`<div class="c"><div class="row"><div style="flex:1"><b>${E(x.ruta||'Ciclo guardado')}</b><div class="m">Ciclo ${x.n||i+1} · ${fd(x.fecha)} · ${x.pasos?(x.res||[]).length+' de '+x.pasos+' actividades':'sin detalle de actividades'}</div></div><button class="b sm s" style="margin:0" data-a="cyViewL" data-v="${i}">Ver detalles</button></div></div>`).join('')}`:''}`}
 function personName(id){const p=(S.people||[]).find(x=>String(x.id)===String(id));return p?p.nombre:'Contacto no disponible'}
 function stepRows(r,team,d){if(isNew(r)&&typeof P3!='undefined')return P3.rows(r,d,fd);const st=stepsOf(r,team),res=d.res||{},acts=d.acts||{},g=d.g||{};
@@ -2661,7 +2663,7 @@ if(cur)det+=`<div class="m" style="margin-bottom:8px">Se guardará: <b>${title(c
 openSheet(`<div style="font-size:18px;font-weight:700">¿Estás seguro de que deseas cambiar de plan?</div><div class="m" style="margin:6px 0 10px">Guardaremos tu plan actual con todas sus actividades, respuestas y progreso. Tus contactos y demás registros permanecerán disponibles.</div>${det}<button class="b" data-a="cyGo">Confirmar cambio</button><button class="b t" data-a="cyCancel">Cancelar</button>`)}
 Object.assign(A,{
 cyChange(){S.tmp.cyx=null;S.tmp.cyrep=0;S.v=pickV},
-cyList(){closeSheet();cleanBw(false);S.v=listV},
+cyList(){closeSheet();try{typeof P3!=='undefined'&&P3.purgeOrphans&&P3.purgeOrphans()}catch(e){}cleanBw(false);S.v=listV},
 cyPick(e,v){const g=+v;S.tmp.cyg=g;if(S.tmp.cyrep)confirmSheet('new',g);else if(mine(g).length)S.v=abV;else confirmSheet('new',g)},
 cyNew(){confirmSheet('new',S.tmp.cyg)},
 cyChoose(){S.v=chooseV},
@@ -2669,6 +2671,10 @@ cyResume(e,v){confirmSheet('resume',v)},
 cyView(e,v){S.tmp.cyd=v;S.v=viewV},
 cyViewL(e,v){S.tmp.cyl=v;S.v=viewLV},
 cyCancel(){S.tmp.cyx=null;closeSheet()},
+cyDel(e,v){const t=find(v);if(!t||!S.cy||v===S.cy.active||v===S.cyid)return;S.tmp.cydel=v;openSheet(`<div style="font-size:18px;font-weight:700">¿Eliminar este plan?</div><div class="m" style="margin:6px 0 10px">Se eliminará <b>${title(t)}</b> (${t.pct||0} %, ${t.done||0} de ${t.total||0} actividades) con sus actividades y respuestas. Tus personas y contactos no se borran. No se puede deshacer.</div><button class="b" data-a="cyDelOk">Sí, eliminar este plan</button><button class="b t" data-a="cyCancel">Cancelar</button>`)},
+cyDelOk(){const v=S.tmp.cydel;S.tmp.cydel=null;closeSheet();const t=find(v);if(!t||!S.cy||v===S.cy.active||v===S.cyid)return;
+ try{if(typeof P3!=='undefined'){const o=P3.G(),r=bwRecOf(t);const f=((((S.g||{}).pbienestar0)||{}).d||{}).f||{};o.bien=o.bien.filter(x=>x.cy!==v&&!(r&&x.id===r.id&&x.id!==f.rec))}}catch(er){}
+ S.cy.items=S.cy.items.filter(x=>x.id!==v);toast('Plan eliminado.');S.v=listV;setTimeout(()=>{cloud()},50)},
 cyGo(){const x=S.tmp.cyx;if(!x)return closeSheet();
 const r=swap(x.kind,x.arg);
 if(!r.ok){openSheet(`<div style="font-size:18px;font-weight:700">No se cambió tu plan</div><div class="m" style="margin:6px 0 10px">${E(r.msg)}</div><button class="b" data-a="shx">Entendido</button>`);return}
