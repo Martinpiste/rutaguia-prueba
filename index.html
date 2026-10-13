@@ -1180,6 +1180,9 @@ const card=(h,extra)=>`<div class="c"${extra?' style="'+extra+'"':''}>${h}</div>
 const err=(m)=>m?`<div class="m" role="alert" style="color:var(--ert,#b42318);margin:4px 0">⚠ ${E(m)}</div>`:'';
 /* buscador de personas: elegir una existente o crear una nueva SOLO después de revisar posibles duplicados */
 function pick(id,target,tipo,sug,opt){opt=opt||{};
+ {const po=opt.keep||(S.tmp.pkOpen||{})[id],md=target.slice(0,4),pa=target.slice(4);
+  if(!po&&md==='set:'){const cur=getv(pa);if(typeof cur==='string'&&cur&&PP(cur))return`<div class="c" style="background:transparent;padding:8px 10px"><div class="row"><span>✔ <b>${E(pname(cur))}</b></span><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="pkopen" data-v="${ATTR(id)}">Cambiar</button></div></div>`}
+  if(!po&&md==='add:'){const l=getv(pa);if(Array.isArray(l)&&l.length)return`<button class="b sm s" style="margin-top:8px" data-a="pkopen" data-v="${ATTR(id)}">+ Agregar otra persona</button>`}}
  const q=(S.tmp.p3q||{})[id]||'',t=(S.tmp.p3t||{})[id]||'';
  return`<div class="c" style="background:transparent;padding:10px"><label>${E(opt.label||"Buscar a una persona o crear una nueva")}</label><input data-p3q="${ATTR(id)}|${ATTR(target)}|${ATTR(tipo||'')}" placeholder="Escribe un nombre…" autocomplete="off" value="${ATTR(q)}">${opt.nophone?'':`<input data-p3t="${ATTR(id)}" type="tel" placeholder="Teléfono (opcional, ayuda a detectar duplicados)" value="${ATTR(t)}">`}<div id="p3r_${ATTR(id)}">${pickRes(id,target,tipo)}</div>${sug||''}</div>`}
 function pickRes(id,target,tipo){const q=(S.tmp.p3q||{})[id]||'',t=(S.tmp.p3t||{})[id]||'';if(nrm(q).length<2&&dg(t).length<7)return'<div class="m">Escribe al menos 2 letras para buscar en tus Personas.</div>';
@@ -1776,7 +1779,7 @@ function nwSave(){const n=nwG(),miss=nwMissing(n);
 function L1adder(sug,l){const n=nwG(),m=n.m||'';
  const head=(l||[]).length?'Agregar otra persona a desarrollar':'¿A quién vas a desarrollar?';
  let body='';
- if(m==='buscar')body=pick('l1','add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'),{label:'Escribe el nombre de la persona',nophone:true});
+ if(m==='buscar')body=pick('l1','add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'),{label:'Escribe el nombre de la persona',nophone:true,keep:true});
  else if(m==='nuevo'){const b='f/nw/';
   body=`<div class="c"><b>Persona nueva</b>${lab('NOMBRES (obligatorio)')}${inp(b+'nombres','Nombres')}${lab('APELLIDOS (obligatorio)')}${inp(b+'apellidos','Apellidos')}${lab('¿ES EMPRESARIO OMNILIFE? (obligatorio responder)')}${chips(b+'omn',[['emp','Empresario Omnilife'],['cli','Cliente admirable'],['no','Aún no es miembro (prospecto o nuevo)']],n.omn)}${P3.OM.member(n.omn)?lab('CÓDIGO (obligatorio y único)')+inp(b+'numEmp','Letras y números'):''}${!n.omn?'':isPros(n.omn)?`${lab('FECHA DE INICIO DEL SEGUIMIENTO (opcional; si la dejas vacía es hoy)')}${inp(b+'finsc','','date')}${note('Como todavía es prospecto no se pide fecha de inscripción ni patrocinador: tú eres su patrocinador por ahora. Cuando se registre, cambia su estatus y ahí se piden su código y su patrocinador.')}`:`${lab('FECHA DE INSCRIPCIÓN')}${inp(b+'finsc','','date')}
   ${lab('PATROCINADOR')}${spBox(b,n.spons==='otro'?'':n.spons,'ro_nw',sugBtns(teamP().slice(0,8),'set:'+b+'spons'))}`}
@@ -1871,9 +1874,13 @@ function depthMap(){const m={},go=(by,d)=>{devs().filter(x=>x.by===by&&!(x.pid i
 IMPL.pliderazgo[5]={
  render:()=>{const f=F(),ready=teamP().filter(p=>maxLvl(p.id)>=3),dm=depthMap(),niveles=Object.values(dm).reduce((a,x)=>(a[x]=(a[x]||0)+1,a),{});
   return`${note('Personas con nivel «Ya puede hacerlo solo» o más en alguna habilidad aparecen como preparadas. La persona elegida decide a quién acompañará.')}
-  <div class="c"><b>1. ¿Quién está preparado para desarrollar a alguien?</b>${f.leader?`<div class="m">Elegida: <b>${E(pname(f.leader))}</b></div>`:''}<div>${ready.map(p=>`<button class="ch ${f.leader===p.id?'on':''}" data-a="p3pick" data-v="set:f/leader|${ATTR(p.id)}">${E(p.nombre)} · ${E(indep(p.id))}</button>`).join('')||note('Todavía nadie alcanza ese nivel; puedes elegir a otra persona de tu equipo.')}</div>${pick('l6a','set:f/leader','Miembro del equipo',sugBtns(teamP().filter(p=>!ready.includes(p)),'set:f/leader'))}</div>
-  ${f.leader?`<div class="c"><b>2. ¿A quién acompañará ${E(pname(f.leader))}?</b>${f.child?`<div class="m">Elegida por ${E(pname(f.leader))}: <b>${E(pname(f.child))}</b></div>`:''}${pick('l6b','set:f/child','Miembro del equipo','')}${f.child?`<button class="b" data-a="p3link">Registrar este acompañamiento</button>`:''}${err(S.tmp.p3lerr)}</div>`:''}
-  <div class="c"><h3>Duplicación generada</h3><div><b>Yo</b>${tree('yo',new Set())||'<div class="m">Sin personas aún.</div>'}</div><div class="m">Personas que desarrollo directamente: ${devs().filter(x=>x.by==='yo').length} · desarrolladas por mis líderes: ${devs().filter(x=>x.by!=='yo').length} · niveles del árbol: ${Object.keys(niveles).length}${Object.keys(niveles).map(k=>' · nivel '+k+': '+niveles[k]).join('')}</div></div>
+  ${(()=>{const o=S.tmp.l6o=S.tmp.l6o||{},n=devs().filter(x=>x.by!=='yo').length;
+   const st=`<div class="m" style="margin:4px 0">Paso ${!f.leader?1:2} de 3 · ${n} acompañamiento(s) registrados</div>`;
+   const s1=f.leader&&!o[1]?`<div class="c"><div class="row"><span>✔ <b>1. Prepara:</b> ${E(pname(f.leader))}</span><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="l6tog" data-v="1">Cambiar</button></div></div>`
+   :`<div class="c"><b>1. ¿Quién está preparado para desarrollar a alguien?</b><div>${ready.map(p=>`<button class="ch ${f.leader===p.id?'on':''}" data-a="p3pick" data-v="set:f/leader|${ATTR(p.id)}">${E(p.nombre)} · ${E(indep(p.id))}</button>`).join('')||note('Todavía nadie alcanza ese nivel; puedes elegir a otra persona de tu equipo.')}</div>${pick('l6a','set:f/leader','Miembro del equipo',sugBtns(teamP().filter(p=>!ready.includes(p)),'set:f/leader'))}</div>`;
+   const s2=f.leader?`<div class="c"><b>2. ¿A quién acompañará ${E(pname(f.leader))}?</b>${S.tmp.l6last&&!f.child?`<div class="m">✔ Último registro: ${E(S.tmp.l6last)}</div>`:''}${pick('l6b','set:f/child','Miembro del equipo','')}${f.child?`<button class="b" data-a="p3link">Registrar este acompañamiento</button>`:''}${err(S.tmp.p3lerr)}</div>`:'';
+   const s3=`<div class="c"><div class="row"><b>3. Duplicación generada</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="l6tog" data-v="tree">${o.tree?'Ocultar árbol':'Ver árbol'}</button></div><div class="m">${n?devs().filter(x=>x.by==='yo').length+' directa(s) · '+n+' por mis líderes · '+Object.keys(niveles).length+' nivel(es)':'Aún sin acompañamientos.'}</div>${o.tree?`<div><b>Yo</b>${tree('yo',new Set())||'<div class="m">Sin personas aún.</div>'}</div><div class="m">${Object.keys(niveles).map(k=>'nivel '+k+': '+niveles[k]).join(' · ')}</div>`:''}</div>`;
+   return st+s1+s2+s3})()}
   ${devs().filter(x=>x.by!=='yo').map(x=>`<div class="c"><b>${E(pname(x.pid))}</b> <span class="m">acompañado por ${E(pname(x.by))}</span><div class="m">Mismos pasos que 1–4, con registros únicos de esta persona:</div><div class="row2"><button class="b sm s" style="margin:0" data-a="p3goto" data-v="0|${ATTR(x.pid)}">Elegir (act. 1)</button><button class="b sm s" style="margin:0" data-a="p3goto" data-v="1|${ATTR(x.pid)}">Acuerdo (act. 2)</button><button class="b sm s" style="margin:0" data-a="p3goto" data-v="2|${ATTR(x.pid)}">Habilidad (act. 3)</button><button class="b sm s" style="margin:0" data-a="p3goto" data-v="3|${ATTR(x.pid)}">Revisión (act. 4)</button></div></div>`).join('')}`},
  check:()=>devs().some(x=>x.by!=='yo')?true:'Registra al menos un acompañamiento: la persona preparada elige a quién acompañará.',
  commit:()=>{const n=devs().filter(x=>x.by!=='yo').length;return n+' acompañamiento(s) de nuevos líderes registrados'}};
@@ -1926,7 +1933,8 @@ p3link(){const f=F(),x=f.leader,c=f.child;S.tmp.p3lerr='';if(!x||!c)return;if(x=
  const d=dev(c);if(d&&d.by!=='yo'&&d.by!==x){S.tmp.p3lerr=pname(c)+' ya es acompañada por '+pname(d.by)+'.';return}
  if(d&&d.by===x){S.tmp.p3lerr=pname(c)+' ya es acompañada por '+pname(x)+': no se duplica la relación.';return}
  if(wouldLoop(x,c)){S.tmp.p3lerr='Eso crearía un ciclo en el árbol del equipo.';return}
- if(!dev(x))ensureDev(x,{});toTeam(PP(c));ensureDev(c,{by:x});logSeg({id:'sg_l6_'+cyId()+'_'+x+'_'+c,pid:c,tipo:'desarrollo',res:'Acompañada por '+pname(x),src:'lider6'});f.child='';toast('Acompañamiento registrado.')},
+ if(!dev(x))ensureDev(x,{});toTeam(PP(c));ensureDev(c,{by:x});logSeg({id:'sg_l6_'+cyId()+'_'+x+'_'+c,pid:c,tipo:'desarrollo',res:'Acompañada por '+pname(x),src:'lider6'});S.tmp.l6last=pname(x)+' → '+pname(c);f.child='';(S.tmp.pkOpen=S.tmp.pkOpen||{}).l6b=false;toast('Acompañamiento registrado.')},
+l6tog(e,v){const o=S.tmp.l6o=S.tmp.l6o||{};o[v]=!o[v];if(v==='1'&&o[1])(S.tmp.pkOpen=S.tmp.pkOpen||{}).l6a=true},
 p3goto(e,v){const[i,pid]=v.split('|'),n=+i;S.open=n;const f=F(n);f.ppl=f.ppl||[];if(!f.ppl.includes(pid))f.ppl.push(pid)},
 p3reu(){const f=F(),r=f.ru||{},m=ruMsg(r);if(m!==true){S.tmp.p3ruerr=m;return}S.tmp.p3ruerr='';
  up('reu',{id:nid('ru'),fecha:r.fecha,hora:r.hora,modalidad:r.modalidad,lugar:r.lugar.trim(),objetivo:r.objetivo.trim(),tema:r.tema.trim(),asist:(r.asist||[]).slice(),notas:r.notas.trim(),acuerdos:JSON.parse(JSON.stringify(r.acuerdos||[])),acu:(r.acuerdos||[]).map(a=>a.txt).join(' · '),prox:r.prox.trim(),proxF:r.proxF||'',cy:cyId()});
@@ -1958,13 +1966,13 @@ stepState=function(i){if(!P3.is(S.r))return _ss(i);if(done(i))return'done';retur
 const _paso=paso;
 paso=function(i){if(!P3.is(S.r))return _paso(i);const h=page(i);P3.prune();return h};
 function page(i){const a=steps(),s=a[i],dn=done(i),impl=(IMPL[S.r]||[])[i];
- const hd=`<button class="b t sm" data-a="cerrar">← Volver</button><div class="m" style="margin-top:8px">ACTIVIDAD ${i+1} DE ${a.length} · ${E(s.gold||'')} · <b>${stLabel(i,cur())}</b></div><h1>${E(s.t)}</h1><div class="c"><h3>Qué vas a hacer</h3>${E(s.what)}<details><summary>Cómo hacerlo y ejemplo</summary>${E(s.how)}<br><i>${E(s.ex)}</i></details></div>`;
+ const hd=`<button class="b t sm" data-a="cerrar">← Volver</button><div class="m" style="margin-top:8px">ACTIVIDAD ${i+1} DE ${a.length} · ${E(s.gold||'')} · <b>${stLabel(i,cur())}</b></div><h1>${E(s.t)}</h1><details class="c"><summary><b>¿De qué trata?</b> <span class="m">toca para leer</span></summary><div style="margin-top:6px">${E(s.what)}</div><div style="margin-top:6px">${E(s.how)}</div><div style="margin-top:6px"><i>${E(s.ex)}</i></div></details>`;
  const ft=`<button class="b t sm" data-a="obj">Tengo una objeción</button><button class="b t sm" data-a="apoyo">Necesito apoyo</button>`;
  if(!impl)return hd+`<div class="c"><div class="m">Esta actividad no está disponible.</div></div>`+ft;
  let body,v;try{body=impl.render();v=impl.check()}catch(e){window.__p3err=(window.__p3err||[]).concat(String(e&&e.stack||e));body=`<div class="c"><div class="m" role="alert">No se pudo mostrar esta actividad. Tus datos no se tocaron.</div></div>`;v='Esta actividad no se pudo mostrar.'}
  const status=dn?`<div class="c">✓ Hecho: ${E(S.res[key(i)].r)}</div>`:'';
  if(impl.noSave&&impl.noSave())return hd+status+body+P3.note('Guarda al menos a una persona (botón «Guardar persona a desarrollar» dentro de su ficha) para poder guardar avance o marcar la actividad como hecha.')+ft;
- return hd+status+body+`<button class="b s" data-a="p3save">Guardar avance</button><div id="p3act" data-i="${i}">${actHtml(i,v,dn,impl)}</div><button class="b t" data-a="p3save">Guardar y continuar después</button>`+ft}
+ return hd+status+body+`<button class="b s" data-a="p3save">Guardar avance</button><div id="p3act" data-i="${i}">${actHtml(i,v,dn,impl)}</div>`+ft}
 const actHtml=(i,v,dn,impl)=>v===true?`<button class="b g" data-a="p3done" data-v="${i}">${dn?'Actualizar resultado':(impl&&impl.noSave?'Guardar como hecho':(impl&&impl.pl?'Completado':'Marcar como hecho'))}</button>`:`<p class="m" role="status">${E(v)}</p>`;
 /* al escribir en un campo, se actualiza solo la zona del botón (sin volver a dibujar y sin perder el foco) */
 function refreshAct(){const el=document.getElementById('p3act');if(!el||!P3.is(S.r))return;const i=+el.dataset.i,impl=(IMPL[S.r]||[])[i];if(!impl)return;let v;try{v=impl.check()}catch(e){v='Esta actividad no se pudo comprobar.'}el.innerHTML=actHtml(i,v,done(i),impl)}
@@ -1990,17 +1998,18 @@ p3c(e,v){const k=v.indexOf('|'),path=v.slice(0,k),val=v.slice(k+1);setv(path,get
 p3m(e,v){const q=v.split('|'),path=q[0],val=q[1],max=+q[2]||0;const a=(getv(path)||[]).slice(),i=a.indexOf(val);if(i>=0)a.splice(i,1);else{if(max&&a.length>=max)return toast('Máximo '+max+' elementos.');a.push(val)}setv(path,a)},
 l1mode(e,v){P3.L1.mode(v)},l1save(e,v){P3.L1.save(v==='1')},l1usedup(){P3.L1.useDup()},l1cancel(){P3.L1.cancel()},l1psave(e,v){P3.L1.psave(v)},l1pedit(e,v){P3.L1.pedit(v)},l1pdet(e,v){P3.L1.pdet(v)},
 p3rm(e,v){const k=v.indexOf('|'),path=v.slice(0,k),pid=v.slice(k+1);setv(path,(getv(path)||[]).filter(x=>x!==pid))},
-p3pick(e,v){const k=v.indexOf('|'),t=v.slice(0,k),pid=v.slice(k+1);applyTarget(t,pid);if(t==='add:f/ppl'&&getv('f/nw'))getv('f/nw').m='';toast('Seleccionada: '+pname(pid))},
-p3newp(e,v){const q=v.split('|'),id=q[0],target=q[1],tipo=q[2],name=((S.tmp.p3q||{})[id]||'').trim(),tel=(S.tmp.p3t||{})[id]||'';if(name.length<2)return toast('Escribe el nombre de la persona.');
+p3pick(e,v){S.tmp.pkOpen={};if(S.tmp.l6o)S.tmp.l6o[1]=false;const k=v.indexOf('|'),t=v.slice(0,k),pid=v.slice(k+1);applyTarget(t,pid);if(t==='add:f/ppl'&&getv('f/nw'))getv('f/nw').m='';toast('Seleccionada: '+pname(pid))},
+p3newp(e,v){S.tmp.pkOpen={};const q=v.split('|'),id=q[0],target=q[1],tipo=q[2],name=((S.tmp.p3q||{})[id]||'').trim(),tel=(S.tmp.p3t||{})[id]||'';if(name.length<2)return toast('Escribe el nombre de la persona.');
  if(id==='l1')return P3.L1.open(name);
  const x=ensureP(name,tel,tipo||undefined,q[3]==='1');applyTarget(target,x.p.id);S.tmp.p3q[id]='';if(S.tmp.p3t)S.tmp.p3t[id]='';toast(x.created?'Persona nueva creada: '+x.p.nombre:'Ya existía en Personas: se seleccionó a '+x.p.nombre+' (sin duplicar).')},
 p3addrow(e,v){const k=v.indexOf('|'),path=v.slice(0,k);const a=(getv(path)||[]).slice();const last=path.split('/').pop();const row={id:nid('r')};if(last==='buy'){const pid=path.split('/')[2],d=F().d&&F().d[pid]||{};row.prod=d.prod||'';row.cant='1';row.precio='';row.fecha=D0()}a.push(row);setv(path,a)},
 p3delrow(e,v){const k=v.indexOf('|'),path=v.slice(0,k),id=v.slice(k+1);setv(path,(getv(path)||[]).filter(x=>x.id!==id))},
 p3guion(e,v){const[pid,i]=v.split('|'),s=(C.scripts||[])[+i];if(!s)return;setv('f/d/'+pid+'/guion',s[3].replace(/[“”]/g,'').replace(/Ana|Sofi|Luis|Carmen/g,pname(pid).split(' ')[0]))},
 p3cpd(e,pid){const g=getv('f/d/'+pid+'/guion');if(g)copyTxt(g);else toast('Primero elige o escribe un mensaje.')},
+pkopen(e,v){(S.tmp.pkOpen=S.tmp.pkOpen||{})[v]=true},
 p3save(){S.open=null;S.tmp.showErr=false;toast('Avance guardado.')},
 p3done(e,v){const i=+v,impl=(IMPL[S.r]||[])[i];if(!impl)return;const c=impl.check();if(c!==true)return toast(String(c));
- const r=impl.commit();S.res[key(i)]={r:String(r),f:today(),g:1};if(S.r==='pbienestar'&&i===5){const rec=P3.planRec();if(rec){rec.done[5]=true;S.res[key(4)]={r:String(P3.bwSec[5].m(rec)),f:today(),g:1}}}S.open=null;S.tab='inicio';S.tmp.showErr=false;
+ const r=impl.commit();S.res[key(i)]={r:String(r),f:today(),g:1};if(S.r==='pbienestar'&&i===5){const rec=P3.planRec();if(rec){rec.done[5]=true;S.res[key(4)]={r:String(P3.bwSec[5].m(rec)),f:today(),g:1}}}{const nx=i+1;if(nx<steps().length){S.open=nx;S.tab='ruta';S.v=null;try{window.scrollTo(0,0)}catch(x){}}else{S.open=null;S.tab='inicio'}}S.tmp.showErr=false;
  try{if(S.r==='pbienestar'&&i===5){const rec=P3.planRec();if(rec&&rec.cierre&&/^Continuar/.test(rec.cierre.decision||''))setTimeout(()=>{try{CY.askNew(6)}catch(x){}},0)}}catch(x){}}});
 /* ----- campos de texto: se guardan al escribir, sin volver a dibujar la pantalla ----- */
 let tm=null;
