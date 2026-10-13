@@ -1314,6 +1314,36 @@ personas=function(){let h=_personas();const n=dupGroups().length;return h+(S.peo
 Object.assign(P3,{dupGroups,mergeP,canMerge,linkedTxt,linked});
 })();
 
+/* ===== v14: ficha de persona → «Guardar cambios» (solo con todo lleno) → ficha minimizada (Ver detalles · Editar · Eliminar de la actividad) ===== */
+P3.mini=(()=>{
+const {F,PP,ATTR,fd,note}=P3;
+const REG={};
+const dd=pid=>{const f=F();f.d=f.d||{};return f.d[pid]=f.d[pid]||{}};
+const trunc=(t,n)=>{t=String(t||'').trim();return t.length>n?t.slice(0,n-1)+'…':t};
+const cap=s=>{s=String(s||'').trim().toLowerCase();return s.charAt(0).toUpperCase()+s.slice(1)};
+const pairs=(cfg,pid,d,p)=>{const out=[];try{const t=document.createElement('template');t.innerHTML=cfg.card(pid,d,p);let lab='',lastChip=null;
+ t.content.querySelectorAll('label,input,textarea,select,button.ch.on').forEach(el=>{const tg=el.tagName;
+  if(tg==='LABEL'){lab=el.textContent.replace(/\s*\((opcional|medible|en sus palabras[^)]*)\)/gi,'').trim();lastChip=null;return}
+  if(tg==='BUTTON'){const x=el.textContent.replace(/[✕]/g,'').trim();if(!x)return;if(lastChip&&lastChip.lab===lab)lastChip.v+=', '+x;else{lastChip={lab,v:x};out.push(lastChip)}return}
+  let v=tg==='SELECT'?((el.selectedOptions[0]||{}).textContent||''):(el.value||'');v=String(v).trim();if(el.hasAttribute('data-p3q')||/^p3(q|t)/.test(Object.keys(el.dataset||{}).join(' ')))return;if(!v)return;if(/^\d{4}-\d\d-\d\d$/.test(v))v=fd(v);lastChip=null;out.push({lab,v})})}catch(e){}
+ return out};
+const sumOf=(cfg,pid,d,p)=>cfg.mini&&cfg.mini.sum?cfg.mini.sum(pid,d,p):pairs(cfg,pid,d,p).slice(0,3).map(x=>E(trunc(x.v,34))).join(' · ')||'Datos completos';
+const detOf=(cfg,pid,d,p)=>cfg.mini&&cfg.mini.det?cfg.mini.det(pid,d,p):pairs(cfg,pid,d,p).map(x=>'<div><b>'+E(cap(x.lab))+':</b> '+E(x.v)+'</div>').join('');
+const saveH=(cfg,pid,d,p)=>{const m=cfg.check(pid,d,p);return m===true?`<button class="b" style="margin-top:10px" data-a="lgsave" data-v="${ATTR(pid)}">Guardar cambios</button>`:`<button class="b" style="margin-top:10px" disabled>Guardar cambios</button>${note('Se activa cuando llenes todos los campos. Falta: '+E(String(m).replace(/\.$/,''))+'.')}`};
+const wrapSave=(cfg,pid,d,p)=>`<div id="lgs_${ATTR(pid)}" data-act="${ATTR(cfg.id)}">${saveH(cfg,pid,d,p)}</div>`;
+const row=(cfg,pid,d,p)=>`<div class="c"><div class="row"><b>${E(p.nombre)}</b>${p.tipo?` <span class="tag">${E(p.tipo)}</span>`:''}<span class="tag ok" style="margin-left:auto">Guardado</span></div><div class="m" style="margin-top:4px">${sumOf(cfg,pid,d,p)}</div><div class="row2"><button class="b sm t" style="width:auto;margin:0" data-a="lgdet" data-v="${ATTR(cfg.id+'|'+pid)}">${d.det?'Ocultar detalles':'Ver detalles'}</button><button class="b sm s" style="width:auto;margin:0" data-a="lgedit" data-v="${ATTR(cfg.id+'|'+pid)}">Editar</button><button class="b sm t" style="width:auto;margin:0" data-a="lgdel" data-v="${ATTR(cfg.id+'|'+pid)}">Quitar de esta actividad</button></div>${d.det?`<div class="m" style="margin-top:8px">${detOf(cfg,pid,d,p)}</div>`:''}</div>`;
+const reg=cfg=>{REG[cfg.id]=cfg};
+const A_=Object.assign;
+document.addEventListener('input',e=>{const d=e.target&&e.target.dataset;const mm=d&&d.p3&&/^f\/d\/([^/|]+)\//.exec(d.p3);if(!mm)return;setTimeout(()=>{const el=document.getElementById('lgs_'+mm[1]),p=PP(mm[1]);if(!el||!p)return;const cfg=REG[el.dataset.act];if(cfg)el.innerHTML=saveH(cfg,mm[1],dd(mm[1]),p)},0)});
+A_(A,{
+lgsave(e,pid){const el=document.getElementById('lgs_'+pid),cfg=el&&REG[el.dataset.act],p=PP(pid),d=dd(pid);const c=cfg&&p?cfg.check(pid,d,p):'';if(!cfg||c!==true)return toast('Llena todos los campos para guardar.');d.saved=true;d.det=false;toast('Guardado: '+p.nombre)},
+lgedit(e,v){const[a,pid]=v.split('|');dd(pid).saved=false},
+lgdet(e,v){const[a,pid]=v.split('|');const d=dd(pid);d.det=!d.det},
+lgdel(e,v){const[a,pid]=v.split('|'),p=PP(pid);if(!p)return;openSheet(`<div style="font-size:18px;font-weight:700">¿Quitar a ${E(p.nombre)} de esta actividad?</div><div class="m" style="margin:8px 0 12px">Se quitan solo los datos que capturaste aquí. La persona sigue en tu base de Personas y no se borra nada de lo que ya guardaste antes.</div><button class="b" data-a="lgdelok" data-v="${ATTR(pid)}">Sí, quitar de esta actividad</button><button class="b t" data-a="shx">Cancelar</button>`)},
+lgdelok(e,pid){closeSheet();const f=F();f.ppl=(f.ppl||[]).filter(x=>x!==pid);if(f.d)delete f.d[pid]}});
+return{row,wrapSave,reg,dd};
+})();
+
 /* ----- módulo BIENESTAR (mismo módulo para «Para mí» y «Acompañar a alguien»; los datos pertenecen a la persona que hace el plan) ----- */
 (()=>{
 const {R,G,up,PP,pname,D0,addDays,diffDays,nid,fd,ATTR,chips,multi,inp,area,lab,note,card,err,pick,sugBtns,sec,IMPL,F,Fr,getv,setv,nrm,isO,CFG}=P3;
@@ -1527,14 +1557,15 @@ const isCli=p=>/^Cliente/.test(p.tipo||'')||p.estado=='Cliente';
 const dd=pid=>{const f=F();f.d=f.d||{};return f.d[pid]=f.d[pid]||{}};
 const cyId=()=>S.cyid||'';
 /* ----- fábrica: actividad con una lista de personas y una tarjeta por persona ----- */
-function plist(cfg){return{
+function plist(cfg){if(cfg.mini!==false)P3.mini.reg(cfg);return{pl:true,
  render:()=>{const f=F(),l=f.ppl=f.ppl||[];f.d=f.d||{};
   const sug=cfg.suggest?cfg.suggest().filter(p=>!l.includes(p.id)):[];
   return`${cfg.intro||''}${l.length?'':note(cfg.vacio||'Aún no has elegido a nadie para esta actividad.')}${l.map(pid=>{const p=PP(pid);if(!p)return'';const d=dd(pid);if(cfg.init)cfg.init(pid,d,p);
-   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b> ${p.tipo?`<span class="tag">${E(p.tipo)}</span>`:''}<button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}</div>`}).join('')}
+   if(cfg.mini!==false&&d.saved)return P3.mini.row(cfg,pid,d,p);
+   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b> ${p.tipo?`<span class="tag">${E(p.tipo)}</span>`:''}<button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}${cfg.mini!==false?P3.mini.wrapSave(cfg,pid,d,p):''}</div>`}).join('')}
   ${pick(cfg.id,'add:f/ppl',cfg.tipo||'Prospecto',sugBtns(sug,'add:f/ppl'))}`},
  check:()=>{const f=F(),l=f.ppl||[];if(!l.length)return cfg.vacio||'Elige al menos una persona.';for(const pid of l){const p=PP(pid);if(!p)continue;const m=cfg.check(pid,dd(pid),p);if(m!==true)return p.nombre+': '+m}return cfg.all?cfg.all(l):true},
- commit:()=>{const f=F(),l=(f.ppl||[]).filter(pid=>PP(pid));l.forEach(pid=>cfg.commit(pid,dd(pid),PP(pid)));return cfg.summary(l.length,l)}}}
+ commit:()=>{const f=F(),l=(f.ppl||[]).filter(pid=>PP(pid));l.forEach(pid=>{if(cfg.mini!==false){dd(pid).saved=true;dd(pid).det=false}cfg.commit(pid,dd(pid),PP(pid))});return cfg.summary(l.length,l)}}}
 /* ----- compras: se guardan en la MISMA Persona (S.p3.compras) y nunca se sobrescriben ----- */
 const comprasOf=pid=>R('compras').filter(c=>c.pid===pid).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
 const lastBuy=pid=>comprasOf(pid)[0]||null;
@@ -1705,12 +1736,14 @@ const incKey=n=>Object.keys(C.inc).find(k=>C.inc[k].n===n)||(n==='RETO 90'?'reto
 const INCOPTS=()=>Object.keys(C.inc||{}).map(k=>C.inc[k].n).concat(['RETO 90','Ninguno por ahora']);
 function ensureDev(pid,patch){const id='dv_'+pid;let d=dev(pid);if(!d)d={id,pid,by:'yo',plan:'',since:D0()};Object.assign(d,patch||{});up('dev',d);return d}
 const multiP=(path,list,cur)=>list.map(p=>`<button class="ch ${(cur||[]).includes(p.id)?'on':''}" aria-pressed="${(cur||[]).includes(p.id)}" data-a="p3m" data-v="${ATTR(path)}|${ATTR(p.id)}|0">${E(p.nombre)}</button>`).join('');
-function plist(cfg){return{
+const trunc=(t,n)=>{t=String(t||'').trim();return t.length>n?t.slice(0,n-1)+'…':t};
+function plist(cfg){if(cfg.mini!==false)P3.mini.reg(cfg);return{pl:true,
  render:()=>{const f=F(),l=f.ppl=f.ppl||[];f.d=f.d||{};const sug=cfg.suggest?cfg.suggest().filter(p=>!l.includes(p.id)):[];
   return`${cfg.intro?cfg.intro():''}${l.length?'':note(cfg.vacio)}${l.map(pid=>{const p=PP(pid);if(!p)return'';const d=dd(pid);if(cfg.init)cfg.init(pid,d,p);
-   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}</div>`}).join('')}${cfg.adder?cfg.adder(sug,l):pick(cfg.id,'add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'))}`},
+   if(cfg.mini!==false&&d.saved)return P3.mini.row(cfg,pid,d,p);
+   return`<div class="c"><div class="row"><b>${E(p.nombre)}</b><button class="b sm t" style="margin:0 0 0 auto;width:auto" data-a="p3rm" data-v="f/ppl|${ATTR(pid)}">Quitar de esta actividad</button></div>${cfg.card(pid,d,p)}${cfg.mini!==false?P3.mini.wrapSave(cfg,pid,d,p):''}</div>`}).join('')}${cfg.adder?cfg.adder(sug,l):pick(cfg.id,'add:f/ppl','Miembro del equipo',sugBtns(sug,'add:f/ppl'))}`},
  check:()=>{const l=F().ppl||[];if(!l.length)return cfg.vacio;for(const pid of l){const p=PP(pid);if(!p)continue;const m=cfg.check(pid,dd(pid),p);if(m!==true)return p.nombre+': '+m}return true},
- commit:()=>{const l=(F().ppl||[]).filter(pid=>PP(pid));l.forEach(pid=>cfg.commit(pid,dd(pid),PP(pid)));return cfg.summary(l.length)}}}
+ commit:()=>{const l=(F().ppl||[]).filter(pid=>PP(pid));l.forEach(pid=>{if(cfg.mini!==false){dd(pid).saved=true;dd(pid).det=false}cfg.commit(pid,dd(pid),PP(pid))});return cfg.summary(l.length)}}}
 const toTeam=p=>{if(!p.tipo||p.tipo==='Prospecto')p.tipo='Miembro del equipo';else if(p.tipo==='Cliente')p.tipo='Cliente y miembro'};
 const nameBox=p=>{P3.splitInto(p);return`${lab('NOMBRES')}<input data-p3pn="${ATTR(p.id)}|nombres" value="${ATTR(p.nombres||'')}" maxlength="80" autocomplete="off">${lab('APELLIDOS')}<input data-p3pn="${ATTR(p.id)}|apellidos" value="${ATTR(p.apellidos||'')}" maxlength="80" autocomplete="off">`};
 const TX=(b,k,l,ph,rows)=>`${lab(l)}${rows?area(b+k,ph||'',rows):inp(b+k,ph||'')}`;
@@ -1759,13 +1792,13 @@ document.addEventListener('input',e=>{const d=e.target&&e.target.dataset;const m
 const L1fcheck=(pid,d,p)=>{P3.splitInto(p);if(blank(p.nombres))return'escribe sus nombres (y apellidos si los tiene).';if(!d.finsc)return'anota la fecha de inscripción.';if(d.finsc>D0())return'la fecha de inscripción no puede ser futura.';if(!d.spons||d.spons==='otro')return'elige a su patrocinador.';if(d.spons===pid)return'una persona no puede ser su propio patrocinador.';if(blank(d.quiere))return'anota lo que quiere lograr.';if(!d.exp)return'elige su experiencia previa.';if(!d.prod)return'elige su conocimiento de productos.';if(!d.vent)return'elige su experiencia en ventas.';if(d.eqN===''||d.eqN==null||!(parseInt(d.eqN,10)>=0))return'anota la cantidad actual de personas en su equipo (0 si no tiene).';if(!d.desarrolla)return'indica si ya está desarrollando a alguien.';if(blank(d.sit))return'anota su situación actual.';if(!d.plan)return'registra el plan que eligió la persona.';return true};
 const L1sum=(pid,d,p)=>{const sp=d.spons==='yo'?'Yo':(d.spons?pname(d.spons):'—');
  return`<div class="m">Patrocinador: <b>${E(sp)}</b></div><div style="margin-top:6px"><button class="b sm t" style="width:auto;margin:0 6px 0 0" data-a="l1pdet" data-v="${ATTR(pid)}">${d.det?'Ocultar detalles':'Ver detalles'}</button><button class="b sm t" style="width:auto;margin:0" data-a="l1pedit" data-v="${ATTR(pid)}">Editar</button></div>${d.det?`<div class="m" style="margin-top8px">Inscripción: <b>${E(fd(d.finsc))}</b><br>Quiere lograr: <b>${E(d.quiere)}</b><br>Experiencia previa: <b>${E(d.exp)}</b>${d.expTxt?' ('+E(d.expTxt)+')':''}<br>Conocimiento de productos: <b>${E(d.prod)}</b><br>Experiencia en ventas: <b>${E(d.vent)}</b><br>Personas en su equipo: <b>${E(d.eqN)}</b><br>¿Ya desarrolla a alguien?: <b>${E(d.desarrolla)}</b>${d.desarrollaTxt?' ('+E(d.desarrollaTxt)+')':''}<br>Situación: <b>${E(d.sit)}</b><br>Plan que elige: <b>${E(d.plan)}</b></div>`.replace('margin-top8px','margin-top:8px'):''}`};
-const L1psave=(pid,d,p)=>{const m=L1fcheck(pid,d,p);return m===true?`<button class="b s" style="margin-top:10px" data-a="l1psave" data-v="${ATTR(pid)}">Guardar persona a desarrollar</button>`:note('Para guardar a esta persona falta: '+E(String(m).replace(/\.$/,''))+'.')};
+const L1psave=(pid,d,p)=>{const m=L1fcheck(pid,d,p);return m===true?`<button class="b s" style="margin-top:10px" data-a="l1psave" data-v="${ATTR(pid)}">Guardar cambios</button>`:note('Para guardar a esta persona falta: '+E(String(m).replace(/\.$/,''))+'.')};
 const anySaved=()=>(F().ppl||[]).some(pid=>PP(pid)&&dd(pid).saved);
 const L1full=(pid,d,p)=>{const b='f/d/'+pid+'/';return`${nameBox(p)}${lab('FECHA DE INSCRIPCIÓN')}${inp(b+'finsc','','date')}
   ${lab('PATROCINADOR')}${spBox(b,d.spons==='otro'?'':d.spons,'l1s_'+pid)}
   ${lab('¿QUÉ QUIERE LOGRAR? (en sus palabras)')}${area(b+'quiere','',2)}${L1rest(b,d)}`};
 /* ===== 1: elige a quién desarrollar ===== */
-IMPL.pliderazgo[0]=plist({id:'l1',vacio:'Busca o agrega a la persona que vas a desarrollar.',suggest:()=>teamP().filter(p=>!dev(p.id)),
+IMPL.pliderazgo[0]=plist({id:'l1',mini:false,vacio:'Busca o agrega a la persona que vas a desarrollar.',suggest:()=>teamP().filter(p=>!dev(p.id)),
  intro:()=>note('La persona elige su plan; tú no decides por ella. Si todavía no lo tiene claro, regístralo así.'),
  init:L1init,
  card:(pid,d,p)=>d.saved?L1sum(pid,d,p):L1full(pid,d,p)+`<div id="l1ps_${ATTR(pid)}">${L1psave(pid,d,p)}</div>`,
@@ -1787,12 +1820,16 @@ IMPL.pliderazgo[1]=plist({id:'l2',vacio:'Elige a la persona con quien acuerdas s
  commit:(pid,d,p)=>{const inc=(d.inc||[]).filter(n=>n!=='Ninguno por ahora').map(incKey);const rec={pid,plan:d.plan,meta:d.meta.trim(),comp:JSON.parse(JSON.stringify(d.comp)),apoyo:d.apoyo.trim(),inc,rev:d.rev},prev=latestAcu(pid);
   const same=prev&&JSON.stringify([prev.plan,prev.meta,prev.comp,prev.apoyo,prev.inc,prev.rev])===JSON.stringify([rec.plan,rec.meta,rec.comp,rec.apoyo,rec.inc,rec.rev]);
   if(!same)up('acu',Object.assign({id:nid('ac'),fecha:D0(),at:Date.now(),cy:cyId()},rec));ensureDev(pid,{plan:d.plan});follow(p,d.rev,'Revisión de acuerdo');p.ult=D0()},
+ mini:{sum:(pid,d,p)=>E(d.plan)+' · Meta: «'+E(trunc(d.meta,60))+'» · '+(d.comp||[]).length+' compromiso(s) · Revisión '+E(fd(d.rev)),
+  det:(pid,d,p)=>'<b>Meta:</b> '+E(d.meta)+'<br><b>Compromisos:</b><br>'+(d.comp||[]).map(c=>'• '+E(c.acc)+' · '+E(c.cant)+' · hasta '+E(fd(c.limite))).join('<br>')+'<br><b>Apoyo del líder:</b> '+E(d.apoyo)+'<br><b>Incentivos:</b> '+E((d.inc||[]).join(', '))+'<br><b>Fecha de revisión:</b> '+E(fd(d.rev))},
  summary:n=>n+' acuerdo(s) guardados en el historial'});
 /* ===== 3: enséñale a ejecutar su plan ===== */
 IMPL.pliderazgo[2]=plist({id:'l3',vacio:'Elige a la persona con quien practicaron.',suggest:()=>devs().map(x=>PP(x.pid)).filter(Boolean),
  card:(pid,d,p)=>{const b='f/d/'+pid+'/',h=latestHab(pid),plan=(dev(pid)||{}).plan||'';return`${Object.keys(h).length?`<div class="m"><b>Niveles actuales:</b> ${Object.values(h).map(x=>E(x.skill)+': '+E(niv0(x.nivel))).join(' · ')}</div>`:''}${plan?note('Habilidades del plan que eligió: <b>'+E(plan)+'</b>.'):note('Aún no registras el plan que eligió (actividad 1): se muestran habilidades generales.')}${lab('HABILIDAD PRACTICADA')}${chips(b+'skill',skillsFor(plan),d.skill)}${lab('FORMA DE PRÁCTICA')}${chips(b+'forma',FORMA,d.forma)}${lab('EVIDENCIA O NOTA')}${area(b+'nota','Qué hizo o qué viste',2)}${lab('NIVEL ALCANZADO')}${chips(b+'nivel',NIV,niv0(d.nivel))}${TX(b,'proxP','PRÓXIMA PRÁCTICA','Ej.: practicar una presentación')}${lab('FECHA DE LA PRÓXIMA PRÁCTICA (opcional)')}${inp(b+'proxF','','date')}`},
  check:(pid,d)=>!d.skill?'elige la habilidad.':!d.forma?'elige la forma de práctica.':!(d.nota||'').trim()?'anota la evidencia o una nota.':!d.nivel?'elige el nivel.':blank(d.proxP)?'anota la próxima práctica.':true,
  commit:(pid,d,p)=>{const prev=latestHab(pid)[d.skill];if(!(prev&&prev.nivel===d.nivel&&prev.nota===d.nota.trim()&&prev.fecha===D0()))up('hab',{id:nid('hb'),pid,skill:d.skill,forma:d.forma,nivel:d.nivel,nota:d.nota.trim(),proxP:d.proxP.trim(),proxF:d.proxF||'',fecha:D0(),at:Date.now(),cy:cyId()});ensureDev(pid,{});p.ult=D0();if(d.proxF)follow(p,d.proxF,'Práctica: '+d.proxP.trim());logSeg({id:'sg_l3_'+cyId()+'_'+pid+'_'+d.skill,pid,tipo:'habilidad',res:d.skill+': '+d.nivel,nota:d.nota.trim(),src:'lider3'})},
+ mini:{sum:(pid,d,p)=>E(d.skill)+' · '+E(niv0(d.nivel))+(d.proxP?' · Próxima: '+E(trunc(d.proxP,40)):''),
+  det:(pid,d,p)=>'<b>Habilidad:</b> '+E(d.skill)+'<br><b>Forma de práctica:</b> '+E(d.forma)+'<br><b>Evidencia:</b> '+E(d.nota)+'<br><b>Nivel:</b> '+E(niv0(d.nivel))+'<br><b>Próxima práctica:</b> '+E(d.proxP)+(d.proxF?' ('+E(fd(d.proxF))+')':'')},
  summary:n=>'Habilidades registradas de '+n+' persona(s)'});
 /* ===== 4: revisa su avance ===== */
 IMPL.pliderazgo[3]=plist({id:'l4',vacio:'Elige a la persona que vas a revisar.',suggest:()=>devs().map(x=>PP(x.pid)).filter(Boolean),
@@ -1803,6 +1840,8 @@ IMPL.pliderazgo[3]=plist({id:'l4',vacio:'Elige a la persona que vas a revisar.',
   ${TX(b,'sig','NUEVA ACCIÓN','Ej.: practicar una presentación')}${lab('FECHA DE LA SIGUIENTE REVISIÓN')}${inp(b+'fecha','','date')}`},
  check:(pid,d)=>{const a=latestAcu(pid);if(a&&(a.comp||[]).some(c=>!(d.cmp||{})[c.id]))return'marca el estado de cada compromiso.';if(blank(d.resultado))return'anota el resultado.';if(blank(d.obst))return'anota el obstáculo (o «Ninguno»).';if(blank(d.apoyo))return'anota el apoyo necesario (o «Ninguno»).';if(blank(d.sig))return'define la nueva acción.';if(!d.fecha)return'define la fecha de la siguiente revisión.';return true},
  commit:(pid,d,p)=>{const a=latestAcu(pid);const cm=a?(a.comp||[]).map(c=>({id:c.id,acc:c.acc,estado:d.cmp[c.id]||''})):[];const res=a?cm.map(c=>c.acc+': '+c.estado).join(' · '):'Sin acuerdo previo';logSeg({id:'sg_l4_'+cyId()+'_'+pid,pid,tipo:'revisión',res,cmps:cm,resultado:d.resultado.trim(),nota:[d.resultado&&'Resultado: '+d.resultado.trim(),d.obst&&'Obstáculo: '+d.obst,d.apoyo&&'Apoyo: '+d.apoyo].filter(Boolean).join(' · '),prox:d.fecha,src:'lider4'});follow(p,d.fecha,d.sig.trim());ensureDev(pid,{});p.ult=D0()},
+ mini:{sum:(pid,d,p)=>'Resultado: '+E(trunc(d.resultado,60))+' · Siguiente revisión '+E(fd(d.fecha)),
+  det:(pid,d,p)=>{const a=latestAcu(pid);return(a?'<b>Compromisos:</b><br>'+(a.comp||[]).map(c=>'• '+E(c.acc)+': '+E((d.cmp||{})[c.id]||'—')).join('<br>')+'<br>':'')+'<b>Resultado:</b> '+E(d.resultado)+'<br><b>Obstáculo:</b> '+E(d.obst)+'<br><b>Apoyo necesario:</b> '+E(d.apoyo)+'<br><b>Nueva acción:</b> '+E(d.sig)+'<br><b>Siguiente revisión:</b> '+E(fd(d.fecha))}},
  summary:n=>n+' revisión(es) con nueva acción y fecha'});
 /* ===== 5: organiza y conoce tu equipo ===== */
 function tree(by,seen){const kids=devs().filter(x=>x.by===by&&!seen.has(x.pid));if(!kids.length)return'';return`<ul style="margin:2px 0 2px 14px;padding-left:12px">${kids.map(x=>{seen.add(x.pid);return`<li>${E(pname(x.pid))} <span class="m">${E(x.plan||'plan por definir')}</span>${tree(x.pid,seen)}</li>`}).join('')}</ul>`}
@@ -1911,9 +1950,9 @@ function page(i){const a=steps(),s=a[i],dn=done(i),impl=(IMPL[S.r]||[])[i];
  const status=dn?`<div class="c">✓ Hecho: ${E(S.res[key(i)].r)}</div>`:'';
  if(impl.noSave&&impl.noSave())return hd+status+body+P3.note('Guarda al menos a una persona (botón «Guardar persona a desarrollar» dentro de su ficha) para poder guardar avance o marcar la actividad como hecha.')+ft;
  return hd+status+body+`<button class="b s" data-a="p3save">Guardar avance</button><div id="p3act" data-i="${i}">${actHtml(i,v,dn,impl)}</div><button class="b t" data-a="p3save">Guardar y continuar después</button>`+ft}
-const actHtml=(i,v,dn,impl)=>v===true?`<button class="b g" data-a="p3done" data-v="${i}">${dn?'Actualizar resultado':(impl&&impl.noSave?'Guardar como hecho':'Marcar como hecho')}</button>`:`<p class="m" role="status">${E(v)}</p>`;
+const actHtml=(i,v,dn,impl)=>v===true?`<button class="b g" data-a="p3done" data-v="${i}">${dn?'Actualizar resultado':(impl&&impl.noSave?'Guardar como hecho':(impl&&impl.pl?'Completado':'Marcar como hecho'))}</button>`:`<p class="m" role="status">${E(v)}</p>`;
 /* al escribir en un campo, se actualiza solo la zona del botón (sin volver a dibujar y sin perder el foco) */
-function refreshAct(){const el=document.getElementById('p3act');if(!el||!P3.is(S.r))return;const i=+el.dataset.i,impl=(IMPL[S.r]||[])[i];if(!impl)return;let v;try{v=impl.check()}catch(e){v='Esta actividad no se pudo comprobar.'}el.innerHTML=actHtml(i,v,done(i))}
+function refreshAct(){const el=document.getElementById('p3act');if(!el||!P3.is(S.r))return;const i=+el.dataset.i,impl=(IMPL[S.r]||[])[i];if(!impl)return;let v;try{v=impl.check()}catch(e){v='Esta actividad no se pudo comprobar.'}el.innerHTML=actHtml(i,v,done(i),impl)}
 /* ----- historial de un ciclo de los planes nuevos (solo lectura) ----- */
 const lbl={ppl:'Personas',rel:'Relación',ctx:'Contexto',int:'Interés',est:'Estado',start:'Comenzar',canal:'Canal',res:'Resultado',guion:'Guion',prox:'Siguiente contacto',nota:'Nota',busca:'Busca',prods:'Productos de interés',dijo:'Dijo',nec:'Necesidad',prod:'Producto',carac:'Características',uso:'Uso',precio:'Precio',cierre:'Pregunta de cierre',dec:'Decisión',como:'Cómo le va',dudas:'Dudas',acomp:'Acompañamiento',sat:'Satisfacción',cont:'Continuidad',ref:'Referidos',socio:'Información de socio',quiere:'Quiere lograr',exp:'Experiencia',expTxt:'Detalle',sit:'Situación',plan:'Plan',meta:'Meta',apoyo:'Apoyo',rev:'Revisión',skill:'Habilidad',nivel:'Nivel',obst:'Obstáculos',sig:'Siguiente acción',fecha:'Fecha',modo:'Modo',sel:'Persona'};
 function flat(v,depth){if(v==null||v==='')return'';if(Array.isArray(v)){if(!v.length)return'';if(v.every(x=>typeof x!='object'))return v.map(x=>String(x).length>20&&PP(x)?pname(x):String(x)).map(E).join(', ');return v.map(x=>flat(x,depth+1)).filter(Boolean).join(' | ')}
