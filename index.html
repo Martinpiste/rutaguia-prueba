@@ -2270,7 +2270,7 @@ const IDS=['novato','bronce','plata','recl','reto90'];
 const NM=id=>(BASES[id]||{}).n||id;
 /* ---------- binder de campos (sin volver a dibujar mientras se escribe) ---------- */
 function rs(path){const seg=path.split('.');const root=seg.shift();let o;
- if(root==='v2')o=V2();else if(root==='tmp')o=S.tmp;else if(root==='ins')o=S.ins.find(x=>x.id===seg.shift());else if(root==='reto')o=V2().reto.list.find(x=>x.id===seg.shift());
+ if(root==='v2')o=V2();else if(root==='tmp')o=S.tmp;else if(root==='ins'){const k0=seg.shift();o=S.ins.find(x=>x.id===k0)}else if(root==='reto'){const k0=seg.shift();o=V2().reto.list.find(x=>x.id===k0)}
  if(!o||!seg.length)return null;for(let i=0;i<seg.length-1;i++){if(o[seg[i]]==null||typeof o[seg[i]]!='object')o[seg[i]]={};o=o[seg[i]]}return{o,k:seg[seg.length-1]}}
 const getIv=path=>{const r=rs(path);return r?r.o[r.k]:undefined};
 function mirror(ym){const cur=ymOf(NOW()),v=V2(),m=v.m[ym]||{},b=S.inc.biz;
@@ -2281,7 +2281,7 @@ function after(path){let x;if(x=/^v2\.m\.(\d{4}-\d\d)\./.exec(path))mirror(x[1])
 let tm=null;const flush=()=>{if(tm){clearTimeout(tm);tm=null;try{save()}catch(e){}}};
 function setIv(path,val,kind){const r=rs(path);if(!r)return;if(val===''||val==null||(kind==='n'&&isNaN(+val)))delete r.o[r.k];else r.o[r.k]=kind==='n'?+val:val;after(path);clearTimeout(tm);tm=setTimeout(flush,200)}
 document.addEventListener('input',e=>{const t=e.target,d=t&&t.dataset;if(d&&d.iv!=null&&t.tagName!=='SELECT')setIv(d.iv,t.value,d.k)});
-document.addEventListener('change',e=>{const t=e.target,d=t&&t.dataset;if(d&&d.iv!=null){setIv(d.iv,t.value,d.k);flush();if(t.tagName==='SELECT'||d.rr)render()}});
+document.addEventListener('change',e=>{const t=e.target,d=t&&t.dataset;if(d&&d.iv!=null){setIv(d.iv,t.value,d.k);if(t.tagName==='SELECT'||d.rr){document.querySelectorAll('input[data-iv]').forEach(i=>{if(i.type==='checkbox'||i===t||i.value==='')return;setIv(i.dataset.iv,i.value,i.dataset.k)})}flush();if(t.tagName==='SELECT'||d.rr)render()}});
 window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flush()});
 const iN=(path,ph,extra)=>`<input data-iv="${ATTR(path)}" data-k="n" type="number" inputmode="decimal" step="any" value="${ATTR(getIv(path)??'')}" placeholder="${ATTR(ph||'')}" ${extra||''}>`;
 const iT=(path,ph)=>`<input data-iv="${ATTR(path)}" value="${ATTR(getIv(path)??'')}" placeholder="${ATTR(ph||'')}" maxlength="120" autocomplete="off">`;
@@ -2352,6 +2352,17 @@ function incV2(){try{migrate()}catch(e){}syncNames();const v=V2(),pend=v.pend.le
   return`<div class="c"><div class="row"><b>${E(b.n)}</b><span class="tag">${E(b.prem)}</span></div><div class="m">Vigencia: ${E(b.vig)}</div>${body}<div class="row2">${on?`<button class="b sm" style="margin:0" data-a="incd" data-v="${id}">Ver detalle</button><button class="b t sm" style="margin:0" data-a="deact" data-v="${id}">Desactivar</button>`:`<button class="b sm s" style="margin:0" data-a="act" data-v="${id}">Activar seguimiento</button>`}<button class="b t sm" style="margin:0" data-a="basesum" data-v="${id}">Resumen de bases</button></div></div>`}).join('')}
  <div class="c"><b>Mis datos por mes</b><div class="m">Puntos, nivel y líneas de cada mes, y los puntos y nivel de cada persona de tu estructura. Se conserva el historial mes por mes.</div><button class="b sm" data-a="mesopen" data-v="">Capturar datos del mes</button><button class="b sm s" data-a="perv">Agregar persona a mi estructura</button></div>
  <details><summary>Historial de cambios</summary>${S.inc.hist.slice(-25).reverse().map(h=>`<div class="m">${h.f} · ${E(h.t)}</div>`).join('')||'<div class="m">Sin cambios registrados.</div>'}</details>`}
+
+/* ---------- v23: «Requisitos» de Reclutamiento agrupados por periodo ---------- */
+const reqRow=x=>{const lab=String(x.label).replace(/\s*\((Sep–Oct|Nov|Dic|final)\)\s*$/,'');const ic=x.ok?'✓':x.part?'◐':'○',col=x.ok?'var(--ok,#2e7d32)':x.part?'var(--am,#d97706)':'var(--mu,#888)';
+ return`<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span><b style="color:${col}">${ic}</b> ${E(lab)}</span><b style="font-size:17px;white-space:nowrap">${x.none?'<span class="m">sin dato</span>':x.u=='b'?(x.ok?'Sí':'No'):fm(x.val)+' <span class="m" style="font-weight:400">/ '+fm(x.min)+'</span>'}</b></div>${x.u=='b'||x.none?'':`<div style="margin-top:4px;opacity:.95">${bar(Math.min(100,x.val/x.min*100))}</div>`}</div>`};
+function reclReq(rows){const GR=[['Periodo 1 · Septiembre y octubre',/\(Sep–Oct\)/],['Periodo 2 · Noviembre',/\(Nov\)/],['Periodo 3 · Diciembre',/\(Dic\)/],['Meta final · al 31 de diciembre',/\(final\)/]];
+ const el=rows.find(x=>x.u=='b');const tot=rows.filter(x=>x.u!='b'),okN=tot.filter(x=>x.ok).length;
+ const head=`<div class="c"><div class="row"><b>Requisitos</b><b>${okN} de ${tot.length} cumplidos</b></div><div style="margin:8px 0">${bar(tot.length?okN/tot.length*100:0)}</div>${el?`<span class="tag" style="${el.ok?'':'opacity:.8'}">${el.ok?'✔ Elegibilidad inicial cumplida':el.none?'Elegibilidad inicial: sin registrar':'✗ Elegibilidad inicial no cumplida'}</span><div class="m" style="margin-top:4px">Carrera entre Bronce y Plata Premier al 1 de septiembre.</div>`:''}</div>`;
+ return head+GR.map(([t,re])=>{const g=rows.filter(x=>x.u!='b'&&re.test(x.label));if(!g.length)return'';const n=g.filter(x=>x.ok).length,empty=g.every(x=>x.none);
+  const body=g.map(reqRow).join('');
+  return empty?`<details class="c" style="opacity:.85"><summary><b>${t}</b> <span class="m">· Aún sin datos</span></summary>${body}</details>`:`<div class="c"><div class="row"><b>${t}</b><span class="tag ${n==g.length?'ok':''}">${n} de ${g.length}</span></div>${body}</div>`}).join('')}
+const PCOL=[['#692F8B','105,47,139'],['#EFAB63','239,171,99'],['#1F8A70','31,138,112'],['#2F6FB5','47,111,181']];
 function actV2(id){const st=(V2().i[id]=V2().i[id]||{}),b=BASES[id];const path=k=>'v2.i.'+id+'.'+k;let f='';
  if(id=='novato'){const z=zonaDe(st.estado);f=L2('MES EN QUE ALCANZASTE POR PRIMERA VEZ EL 40 %')+iS(path('first40'),mOpts('2026-01',addM(ymOf(NOW()),1)),'Elige el mes',1)+(st.first40?`<div class="m">Tu única oportunidad de participar es <b>${mLabel(addM(st.first40,1))}</b>.</div>`:'')+L2('ESTADO DONDE PARTICIPAS (para mostrar tu zona)')+iS(path('estado'),ESTADOS,'Elige tu estado',1)+(z?`<div class="m">Zona de participación: <b>${z}</b>. Cada mes ganan 5 Empresarios por zona.</div>`:'')}
  if(id=='bronce')f=L2('MES EN QUE ALCANZASTE POR PRIMERA VEZ BRONCE SUPREME')+iS(path('first'),mOpts('2026-01',ymOf(NOW())),'Elige el mes',1)+(st.first?`<div class="m">Se calcula tu segundo mes: <b>${mLabel(addM(st.first,1))}</b>.</div>`:'');
@@ -2368,23 +2379,34 @@ function mesV2(){try{migrate()}catch(e){}syncNames();const v=V2(),ym=S.tmp.mes||
   ${L2('LÍNEAS ACTIVAS (dato oficial)')}<div class="un">${iN(pre+'lineas','0')}<span>líneas</span></div>
   <details><summary>Chivacola y Agua Blu (para Novato)</summary><div class="m">Captura por separado cuántos puntos de estos productos están incluidos en tus puntos personales y en los de grupo, para no contarlos dos veces. El máximo combinado es 1,000.</div>${L2('INCLUIDOS EN MIS PUNTOS PERSONALES')}<div class="un">${iN(pre+'cvp','0')}<span>pts</span></div>${L2('INCLUIDOS EN LOS PUNTOS DE GRUPO')}<div class="un">${iN(pre+'cvg','0')}<span>pts</span></div></details></div>
  <div class="c"><b>Personas de mi estructura</b>${S.ins.length?'':'<div class="m">Aún no hay personas. Agrégalas para calcular puntos de grupo y estructura.</div>'}
-  ${S.ins.filter(p=>inMonth(p,ym)).map(p=>`<div style="border-top:1px solid var(--ln);margin-top:8px;padding-top:6px"><div class="row"><b>${E(nameOf(p))}</b><span class="m">${nvT(p)} · ${p.fecha?'inscrita '+E(fd(p.fecha)):'sin fecha de inscripción'}</span></div>
+  ${S.ins.filter(p=>inMonth(p,ym)).map((p,ix)=>{const pc=PCOL[ix%PCOL.length];return`<div class="c" style="margin-top:12px;border-left:6px solid ${pc[0]};background-image:linear-gradient(rgba(${pc[1]},.13),rgba(${pc[1]},.13))"><div class="row"><b style="font-size:17px">${E(nameOf(p))}</b><span class="m">${nvT(p)} · ${p.fecha?'inscrita '+E(fd(p.fecha)):'sin fecha de inscripción'}</span></div>
    ${L2('PUNTOS EN '+mLabel(ym).toUpperCase())}<div class="un">${iN('ins.'+p.id+'.mp.'+ym,'0')}<span>pts</span></div>
    ${L2('NIVEL EN ESE MES')}${iS('ins.'+p.id+'.ml.'+ym,LV.slice(1),'Elige',1)}
-   ${rc?`${L2('CHIVACOLA Y AGUA BLU INCLUIDOS (Reclutamiento)')}<div class="un">${iN('ins.'+p.id+'.mcv.'+ym,'0')}<span>pts</span></div>`:''}
-   <button class="b t sm" data-a="perev" data-v="${ATTR(p.id)}">Editar fecha, nivel de la estructura o dependencia</button></div>`).join('')}
+   ${rc?((getIv('ins.'+p.id+'.mcv.'+ym)!=null||(S.tmp.cvo||{})[p.id])?`${L2('CHIVACOLA Y AGUA BLU INCLUIDOS (Reclutamiento)')}<div class="un">${iN('ins.'+p.id+'.mcv.'+ym,'0')}<span>pts</span></div>`:`<button class="b sm s" style="margin-top:8px;width:auto" data-a="cvopen" data-v="${ATTR(p.id)}">+ Chivacola / Agua Blu</button>`):''}
+   <button class="b t sm" data-a="perev" data-v="${ATTR(p.id)}">Editar fecha, nivel de la estructura o dependencia</button></div>`}).join('')}
   <button class="b sm s" data-a="perv">Agregar persona a mi estructura</button></div>
  ${(v.insArch||[]).length?`<details class="c" open><summary>Personas retiradas de mi estructura (${v.insArch.length})</summary><div class="m">Están archivadas con todo su historial. Puedes restaurarlas cuando quieras.</div>${v.insArch.map(x=>`<div class="row" style="margin-top:6px"><span>${E(x.nombre)} <span class="m">· retirada ${E(fd(x.retiradoEn||''))}</span></span><button class="b sm s" style="margin:0" data-a="insrest" data-v="${ATTR(x.id)}">Restaurar</button></div>`).join('')}</details>`:''}
  <button class="b g" data-a="mesdone">Listo</button>`}
 function perV2(){syncNames();const t=S.tmp.pv=S.tmp.pv||{},ed=t.edit&&S.ins.find(x=>x.id===t.edit);
- const free=S.people.filter(p=>!S.ins.some(i=>i.pid===p.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+ const isM=p=>p.omn==='emp'||p.omn==='cli'||!!p.numEmp||p.tipo==='Miembro del equipo'||p.tipo==='Cliente y miembro';
+ const free=S.people.filter(p=>!S.ins.some(i=>i.pid===p.id)&&p.omn!=='no'&&p.tipo!=='Prospecto'&&isM(p)).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+ const per=!ed&&t.mode==='sel'&&t.sel?PP(t.sel):null;
+ if(per&&t._fs!==t.sel){t.fecha=per.fechaInsc||'';t.conf='';t._fs=t.sel}
  const pe=[['','Ninguna (primer nivel de mi línea)'],...S.ins.filter(x=>!ed||x.id!==ed.id).map(x=>[x.id,nameOf(x)])];
+ const chip=(k,v,l,cur)=>`<button class="ch ${cur===v?'on':''}" aria-pressed="${cur===v}" data-a="pvset" data-v="${k}|${v}">${l}</button>`;
+ let who='';
+ if(ed)who=`${L2('FECHA REAL DE INSCRIPCIÓN (puede ser de otro mes)')}${iD('tmp.pv.fecha',NOW())}`;
+ else{
+  who=`<div class="row2"><button class="ch ${t.mode==='sel'?'on':''}" aria-pressed="${t.mode==='sel'}" data-a="pvmode" data-v="sel">Elegir persona</button><button class="ch ${t.mode==='new'?'on':''}" aria-pressed="${t.mode==='new'}" data-a="pvmode" data-v="new">Crear persona nueva</button></div>`;
+  if(t.mode==='sel'){who+=`${L2('ELIGE A LA PERSONA (solo miembros inscritos)')}${iS('tmp.pv.sel',free.map(p=>[p.id,p.nombre]),'Elige…',1)}${free.length?'':'<div class="m">No hay miembros disponibles. Un prospecto no puede estar en un incentivo: usa «Crear persona nueva» o regístralo como miembro en Personas.</div>'}`;
+   if(per)who+=per.fechaInsc?`<div class="m" style="margin-top:8px">Se inscribió el <b>${E(fd(per.fechaInsc))}</b>.</div>${L2('¿CONFIRMAS ESTA FECHA?')}<div>${chip('conf','si','Sí',t.conf)}${chip('conf','no','No',t.conf)}</div>${t.conf==='no'?`${L2('FECHA REAL DE INSCRIPCIÓN')}${iD('tmp.pv.fecha',NOW())}`:''}`:`<div class="m" style="margin-top:8px">Esta persona no tiene fecha de inscripción registrada.</div>${L2('FECHA REAL DE INSCRIPCIÓN')}${iD('tmp.pv.fecha',NOW())}`}
+  if(t.mode==='new')who+=`${L2('NOMBRES (obligatorio)')}${iT('tmp.pv.nombres','Nombres')}${L2('APELLIDOS (obligatorio)')}${iT('tmp.pv.apellidos','Apellidos')}${L2('¿QUÉ ES?')}<div>${chip('omn','emp','Empresario',t.omn)}${chip('omn','cli','Cliente admirable',t.omn)}</div>${t.omn?`${L2(t.omn==='cli'?'CÓDIGO DE CLIENTE ADMIRABLE (obligatorio)':'CÓDIGO DE EMPRESARIO (obligatorio)')}${iT('tmp.pv.numEmp','Código')}${L2('FECHA REAL DE INSCRIPCIÓN (obligatoria)')}${iD('tmp.pv.fecha',NOW())}`:''}`}
+ const rest=ed||t.mode;
  return`<button class="b t sm" data-a="${ed?'mesopen':'inc'}" data-v="">← Atrás</button><h1>${ed?'Editar '+E(nameOf(ed)):'Agregar a mi estructura'}</h1><div class="c">
- ${ed?'':`${L2('ELIGE A LA PERSONA DE TUS PERSONAS')}${iS('tmp.pv.sel',free.map(p=>[p.id,p.nombre]),'Elige…',1)}<div class="m">¿No está? Escribe su nombre abajo y se creará una sola vez en Personas.</div>${L2('O ESCRIBE UN NOMBRE NUEVO')}${iT('tmp.pv.name','Nombre y apellidos')}`}
- ${L2('FECHA REAL DE INSCRIPCIÓN (puede ser de otro mes)')}${iD('tmp.pv.fecha',NOW())}
- ${L2('POSICIÓN')}${iS('tmp.pv.nivel',[['1','Primer nivel'],['2','Segundo nivel']],false,1)}
- ${(t.nivel||'1')==='2'?`${L2('¿DE QUIÉN DEPENDE? (obligatorio en segundo nivel)')}${iS('tmp.pv.dep',pe.slice(1),'Elige…',1)}`:`${L2('DEPENDE DE (opcional)')}${iS('tmp.pv.dep',pe,false,1)}`}
- </div><button class="b g" data-a="pervsave">Guardar</button>${ed?`<button class="b t" style="color:var(--ert)" data-a="insret" data-v="${ATTR(ed.id)}">Retirar de mi estructura (se archiva con su historial)</button>`:''}`}
+ ${who}
+ ${rest?`${L2('POSICIÓN')}${iS('tmp.pv.nivel',[['1','Primer nivel'],['2','Segundo nivel']],false,1)}
+ ${(t.nivel||'1')==='2'?`${L2('¿DE QUIÉN DEPENDE? (obligatorio en segundo nivel)')}${iS('tmp.pv.dep',pe.slice(1),'Elige…',1)}`:`${L2('DEPENDE DE (opcional)')}${iS('tmp.pv.dep',pe,false,1)}`}`:''}
+ </div>${rest?`<button class="b g" data-a="pervsave">Guardar</button>`:''}${ed?`<button class="b t" style="color:var(--ert)" data-a="insret" data-v="${ATTR(ed.id)}">Retirar de mi estructura (se archiva con su historial)</button>`:''}`}
 function vincV2(){try{if(repairPend())save()}catch(e){}const v=V2();return`<button class="b t sm" data-a="inc">← Mis incentivos</button><h1>Confirmar personas</h1><div class="m">Estas personas de tu estructura tienen el mismo nombre que alguien que ya tienes en Personas. Nunca se unen solas.</div>${v.pend.map(x=>{const i=S.ins.find(s=>s.id===x.insId),c=PP(x.cand);if(!i||!c)return'';return`<div class="c"><b>${E(i.nombre)}</b> (estructura de incentivos)<br><span class="m">Coincide con «${E(c.nombre)}» en Personas${c.tel?' · '+E(c.tel):''}.</span><div class="row2"><button class="b sm" style="margin:0" data-a="vincsame" data-v="${ATTR(x.insId)}">Es la misma persona</button><button class="b sm s" style="margin:0" data-a="vincnew" data-v="${ATTR(x.insId)}">Es otra persona</button></div></div>`}).join('')||'<div class="c">No hay nada pendiente.</div>'}`}
 function basesV2(id){const b=BASES[id],v=V2(),pre='v2.chk.'+id+'.';const br=(v.brk[id]=v.brk[id]||{});
  return`<button class="b t sm" data-a="${isOn(id)?'incd':'inc'}" data-v="${id}">← ${E(b.n)}</button><h1>Bases: ${E(b.n)}</h1>
@@ -2406,8 +2428,8 @@ function incD2(id){if(id=='reto90')return retoV2();syncNames();const b=BASES[id]
  return`<button class="b t sm" data-a="inc">← Mis incentivos</button><h1>${E(b.n)}</h1>
  <div class="c"><b>Estado:</b> EN SEGUIMIENTO<br><b>Vigencia:</b> ${E(b.vig)}<div class="m">${E(b.ver)}</div><div style="margin:8px 0">${bar(p)}</div><b>${p} %</b> avance con los datos que registraste</div>${top}${r.hint?`<div class="c">${E(r.hint)}</div>`:''}${brkBanner(id)}
  ${r.miss.length?`<div class="c" style="border-color:var(--wa)">Necesito un dato adicional para calcular correctamente.${r.miss.slice(0,4).map(x=>`<div>• ${E(x[0])} <button class="b sm" data-a="um" data-v="${ATTR(x[1])}">Agregar</button></div>`).join('')}</div>`:''}
- <details open><summary>Requisitos</summary>${rows.map(rowH).join('')}</details>
- <div class="c"><h3>Qué ya cumpliste</h3>${rows.filter(x=>x.ok).map(x=>'✓ '+E(x.label)).join('<br>')||'Aún nada.'}<h3>Te falta</h3>${fa.map(E).join('<br>')||(ok?'Nada de lo capturado.':'Faltan datos por registrar.')}<h3>Siguiente acción</h3>${E(nextA(r))}</div>
+ ${id=='recl'?reclReq(rows):`<details open><summary>Requisitos</summary>${rows.map(rowH).join('')}</details>`}
+ <div class="c"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px"><div><h3>Te falta</h3>${fa.map(x=>'<div style="margin:4px 0">'+E(x)+'</div>').join('')||(ok?'Nada de lo capturado.':'Faltan datos por registrar.')}</div><div><h3>Ya cumpliste</h3>${rows.filter(x=>x.ok).map(x=>'<div style="margin:4px 0">✓ '+E(x.label)+'</div>').join('')||'Aún nada.'}</div></div><h3>Siguiente acción</h3>${E(nextA(r))}</div>
  ${cap}<button class="b s" data-a="actcfg" data-v="${id}">Cambiar mes o datos de configuración</button><button class="b" data-a="tree" data-v="${id}">Ver mi estructura</button><button class="b s" data-a="basesum" data-v="${id}">Resumen de bases y condiciones</button>
  <details><summary>Ver detalle del cálculo</summary>${r.tr.map(t=>`<div class="m">${E(t[0])}: <b>${typeof t[1]=='number'?fm(t[1]):E(t[1])}</b>${t[2]?' — '+E(t[2]):''}</div>`).join('')||'<div class="m">Registra personas para ver el desglose.</div>'}</details>
  <p class="m">${ok?E(AVISO):'Avance calculado con la información que has registrado. '+E('No es una confirmación oficial de OMNILIFE.')}</p>`}
@@ -2493,13 +2515,27 @@ Object.assign(A,{
   if(t.edit){const p=S.ins.find(x=>x.id===t.edit);if(!p)return;if(t.dep===p.id)return toast('Una persona no puede depender de sí misma.');
    if(t.dep){let c=S.ins.find(x=>x.id===t.dep),n=0;while(c&&n++<20){if(c.id===p.id)return toast('Eso crearía un ciclo en tu estructura.');c=S.ins.find(x=>x.id===c.dep)}}
    p.fecha=t.fecha||'';p.enrollmentDate=t.fecha||'';p.nivel=nivel;p.dep=nivel==='2'||t.dep?t.dep:'';S.inc.hist.push({f:NOW(),t:nameOf(p)+': datos de estructura actualizados'});S.tmp.pv=null;S.v=mesV2;toast('Guardado.');return}
-  let per=t.sel&&PP(t.sel);const nm$=(t.name||'').trim();
-  if(!per&&!nm$)return toast('Elige a una persona o escribe un nombre.');
-  if(!per){const dup=findDup(nm$,'');if(dup&&!t.force){openSheet(`<div style="font-size:18px;font-weight:700">Ya existe «${E(dup.nombre)}» en Personas</div><div class="m">No se unen solas. ¿Es la misma persona?</div><button class="b" data-a="pervsame" data-v="${ATTR(dup.id)}">Es la misma persona</button><button class="b s" data-a="pervnew">Es otra persona (crear nueva)</button><button class="b t" data-a="shx">Cancelar</button>`);return}
-   per=ensureP(nm$,'','Miembro del equipo',true).p}
+  if(!t.mode)return toast('Elige una opción: elegir persona o crear persona nueva.');
+  let per=null;
+  if(t.mode==='sel'){per=t.sel&&PP(t.sel);if(!per)return toast('Elige a la persona.');
+   if(per.fechaInsc&&!t.conf)return toast('Confirma la fecha de inscripción (Sí o No).');
+   if(per.fechaInsc&&t.conf==='si')t.fecha=per.fechaInsc;
+   if(!t.fecha)return toast('Anota la fecha real de inscripción.');
+   if(t.fecha>NOW())return toast('La fecha de inscripción no puede ser futura.');
+   per.fechaInsc=t.fecha;if(!per.omn)per.omn='emp';addIns(per,t);return}
+  const nom=(t.nombres||'').trim(),ape=(t.apellidos||'').trim();
+  if(!nom)return toast('Escribe el nombre.');if(!ape)return toast('Escribe el apellido.');if(!t.omn)return toast('Elige si es Empresario o Cliente admirable.');
+  if(!(t.numEmp||'').trim())return toast('Escribe el código de '+(t.omn==='cli'?'cliente admirable':'empresario')+'.');
+  if(!t.fecha)return toast('Anota la fecha real de inscripción.');if(t.fecha>NOW())return toast('La fecha de inscripción no puede ser futura.');
+  t.name=nom+' '+ape;
+  {const dup=findDup(t.name,'');if(dup&&!t.force){openSheet(`<div style="font-size:18px;font-weight:700">Ya existe «${E(dup.nombre)}» en Personas</div><div class="m">No se unen solas. ¿Es la misma persona?</div><button class="b" data-a="pervsame" data-v="${ATTR(dup.id)}">Es la misma persona</button><button class="b s" data-a="pervnew">Es otra persona (crear nueva)</button><button class="b t" data-a="shx">Cancelar</button>`);return}}
+  per=ensureP(t.name,'','Miembro del equipo',true).p;applyNew(per,t);
   addIns(per,t);},
- pervsame(e,v){closeSheet();const per=PP(v);if(per)addIns(per,S.tmp.pv||{})},
- pervnew(){closeSheet();const t=S.tmp.pv||{};const per=ensureP((t.name||'').trim(),'','Miembro del equipo',true).p;addIns(per,t)},
+ pervsame(e,v){closeSheet();const per=PP(v),t=S.tmp.pv||{};if(per){applyNew(per,t);addIns(per,t)}},
+ pervnew(){closeSheet();const t=S.tmp.pv||{};const per=ensureP((t.name||'').trim(),'','Miembro del equipo',true).p;applyNew(per,t);addIns(per,t)},
+ pvmode(e,v){const t=S.tmp.pv=S.tmp.pv||{};t.mode=v},
+ pvset(e,v){const t=S.tmp.pv=S.tmp.pv||{},k=v.split('|')[0],x=v.split('|')[1];t[k]=x;if(k==='conf'&&x==='si')t.fecha=(PP(t.sel)||{}).fechaInsc||t.fecha},
+ cvopen(e,v){(S.tmp.cvo=S.tmp.cvo||{})[v]=true},
  ivt(e,v){const t=e&&e.target;if(t&&t.type==='checkbox'){setIv(v,t.checked?true:'');flush();render()}},
  ivadd(e,v){const rid=v.split('.')[1],rec=V2().reto.list.find(x=>x.id===rid),q=rs(v);if(!q)return;if(!Array.isArray(q.o[q.k]))q.o[q.k]=[];q.o[q.k].push({ym:rec?r90Months(rec.per)[0]:'',cant:1,uno:'Sí',mx:'Sí'});flush();render()},
  ivdel(e,v){const[p,i]=v.split('|'),a=getIv(p);if(Array.isArray(a))a.splice(+i,1);flush();render()},
@@ -2512,6 +2548,7 @@ Object.assign(A,{
  retonew(){closeSheet();const t=S.tmp.r90||{};mkReto(ensureP((t.name||'').trim(),'','Cliente',true).p.id,S.tmp.r90per||r90Cur())},
  retodel(e,v){openSheet(`<div style="font-size:18px;font-weight:700">¿Quitar este participante?</div><div class="m">Se quitan sus registros de Reto 90 (pesos, compras). La persona sigue en Personas.</div><button class="b" style="background:#dc2626" data-a="retodelok" data-v="${ATTR(v)}">Quitar</button><button class="b t" data-a="shx">Cancelar</button>`)},
  retodelok(e,v){const l=V2().reto.list,i=l.findIndex(x=>x.id===v);if(i>=0)l.splice(i,1);closeSheet();S.v=retoV2;toast('Participante quitado.')}});
+function applyNew(per,t){if(t.mode!=='new')return;per.nombres=(t.nombres||'').trim();per.apellidos=(t.apellidos||'').trim();per.omn=t.omn;per.numEmp=(t.numEmp||'').trim();per.fechaInsc=t.fecha||'';per.tipo='Miembro del equipo'}
 function addIns(per,t){if(S.ins.some(i=>i.pid===per.id))return toast('Esa persona ya está en tu estructura.');
  const p={id:uid(),pid:per.id,nombre:per.nombre,fecha:t.fecha||'',enrollmentDate:t.fecha||'',createdAt:NOW(),nivel:t.nivel||'1',dep:(t.nivel||'1')==='2'||t.dep?(t.dep||''):'',pts:0,lvl:'—',h:[],mp:{},ml:{},mcv:{}};
  S.ins.push(p);S.inc.biz.insAsked=1;S.inc.hist.push({f:NOW(),t:'Se agregó a la estructura: '+per.nombre});S.tmp.pv=null;S.v=mesV2;toast('Agregada a tu estructura.')}
